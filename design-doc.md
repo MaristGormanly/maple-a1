@@ -150,7 +150,53 @@ All interactions are logged in structured JSON, with all PII and secrets scrubbe
 ---
 
 ## 4. AI Integration Specification
-*(Jayden)*
+
+### Integration Approach
+
+The AI evaluation layer of A1 is implemented as a **multi-pass orchestrated chain**, coordinated by the FastAPI backend through `services/llm.py`. Rather than feeding all available data into a single monolithic prompt—which would dilute reasoning quality and waste context tokens—the backend decomposes evaluation into three discrete, sequential agent passes, each with a narrowly scoped responsibility.
+
+**Pass 1 — Test Result Analysis:** The first agent receives the structured JSON output from the Docker sandbox alongside the A5 rubric criteria. Its sole task is to reconcile each test failure against the corresponding rubric criterion, determining whether failures stem from logic errors or environment/configuration issues using Docker exit-code metadata (e.g., `137` OOM, `124` Timeout), and emitting a structured partial feedback object.
+
+**Pass 2 — Style and Complexity Analysis:** Triggered only when the static analysis layer (pylint/eslint) surfaces linter violations, the second agent receives targeted AST-extracted code chunks alongside RAG-retrieved styling exemplars. It evaluates code quality, readability, and conventions, appending findings to the shared reasoning object from Pass 1.
+
+**Pass 3 — Synthesis:** The final agent receives the combined reasoning object and synthesizes the complete MAPLE Standard Response Envelope, generating a `RecommendationObject` with a Git-style diff for every criterion scoring below "Exemplary."
+
+This multi-pass design fits the problem directly: separating deterministic logic analysis from subjective style assessment produces higher-quality reasoning per pass and enables independent model selection based on task complexity.
+
+### Model Selection
+
+All three passes route through cloud APIs with a hierarchical fallback strategy managed in `services/llm.py`. No local models are used, as RAG-based style checking requires fetching current external documentation (PEP 8, Airbnb JS Style Guide) at index-build time, necessitating a cloud-native architecture.
+
+- **Primary — Gemini 2.5 Pro Thinking:** Selected for its extended reasoning capabilities and large context window, critical for reconciling multi-file codebases against rubric criteria. Applied to Passes 1 and 3 where deep logical analysis is required.
+- **Secondary — Gemini 2.5 Flash Lite:** Activated if the primary model exceeds a 60-second latency threshold. Significantly lower cost per token while maintaining acceptable output quality for routine grading.
+- **Final Fallback — GPT-4o:** Reserved for provider outages or repeated reconciliation failures; its strong instruction-following reliability makes it a dependable safety net.
+
+The primary trade-off considered was **quality and determinism vs. cost**. SHA-based caching—hashing the GitHub commit SHA with the Rubric ID—eliminates redundant LLM calls on re-submissions of unchanged code, which is the primary mechanism for staying within the $50/month budget. The relevant cost metric is therefore **cost per unique submission**, not per API call. Policy-based routing—cheaper models for straightforward, high-pass test runs and the primary reasoning model for complex or partially-failing submissions—further controls spend.
+
+### Prompt Engineering
+
+The system prompt establishes the AI as a **strict, objective grading assistant**. Its persona is that of a professor's automated deputy: it must provide comprehensive feedback, show exact code corrections, and explicitly justify every grading decision. The prompt enforces the following:
+
+- **Output format constraint:** All responses must conform strictly to the MAPLE Standard Response Envelope JSON schema. Any text generated outside the schema structure is treated as a formatting violation and triggers a repair pass.
+- **Grounding constraint:** The model is instructed to reference only code artifacts explicitly present in the input payload. If evidence for a criterion is insufficient, it must return `"status": "NEEDS_HUMAN_REVIEW"` for that criterion rather than speculating.
+- **Edge case directives:** If the repository is partial, the model grades all available code and explicitly flags missing components in the `flags` array. If no test suite is detected during the pre-flight check, a `400 VALIDATION_ERROR` is raised before any LLM call is made, saving tokens entirely. Detected adversarial instruction injection via code comments or commit messages results in an immediate refusal, a `MALICIOUS_INPUT_DETECTED` flag in the evaluation metadata, and a log entry.
+- **Resource constraint injection:** When Docker exits with `137` or `124`, a `ResourceConstraintMetadata` block is dynamically injected into the prompt, directing the model to identify performance pathologies (infinite loops, memory leaks) rather than logical errors.
+
+### Retrieval Strategy
+
+RAG functions as a focused, conditional enhancement rather than the pipeline's primary mechanism. It is triggered exclusively when the static analysis phase surfaces linter violations. `services/llm.py` then queries the `pgvector` store for the top-5 most similar styling excerpts using cosine similarity over embeddings generated from language-specific style guide documents. If no retrieved chunk exceeds a similarity threshold of 0.75, Pass 2 proceeds without RAG context and the absence is recorded in the evaluation metadata. The rubric itself is stored in PostgreSQL and injected directly into each pass's prompt as structured text—no RAG is needed for rubric retrieval. The AST-aware chunking strategy—segmenting code at logical terminal nodes rather than fixed character boundaries—ensures embedded code patterns carry semantic coherence, improving retrieval precision for the style-matching task.
+
+### Output Design
+
+Every evaluation concludes with a response conforming to the **MAPLE Standard Response Envelope**: a top-level JSON object containing `criteria_scores` (one entry per rubric criterion, each with a performance level, a human-readable justification paragraph, and an array of `RecommendationObjects`), `deterministic_score`, `metadata` (model used per pass, latency, token counts), and `flags`. Each `RecommendationObject` specifies a file path, line number, and a Git-style diff showing the exact correction. If the model returns malformed JSON, the backend issues one retry with an explicit schema-repair prompt. If the second attempt also fails, the submission is marked `EVALUATION_FAILED` and routed for human review.
+
+### Guardrails and Safety
+
+Three layers mitigate harmful, inaccurate, or misleading output:
+
+1. **Pre-LLM Redaction:** The Regex Redactor in `services/llm.py` strips all Personal Access Tokens, decrypted environment variables, and PII from the input payload before it reaches any model API endpoint.
+2. **Context Containment:** The Circular Buffer caps Docker execution logs at 2 KB (head) and 5 KB (tail), preventing context window pollution from infinite print loops. The AST optimizer bounds the total code payload to the model's safe context threshold, ensuring the model never sees truncated logical units.
+3. **Schema Validation and Hallucination Filtering:** Post-generation JSON validation enforces schema conformance. Any `RecommendationObject` referencing a file path or function name not present in the input payload is automatically stripped and replaced with a `LOW_CONFIDENCE` flag, preventing the model from fabricating non-existent code artifacts.
 
 ---
 
