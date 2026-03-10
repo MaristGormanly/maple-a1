@@ -167,7 +167,7 @@ This multi-pass design fits the problem directly: separating deterministic logic
 
 All three passes route through cloud APIs with a hierarchical fallback strategy managed in `services/llm.py`. No local models are used, as RAG-based style checking requires fetching current external documentation (PEP 8, Airbnb JS Style Guide) at index-build time, necessitating a cloud-native architecture.
 
-- **Primary — Gemini 2.5 Pro Thinking:** Selected for its extended reasoning capabilities and large context window, critical for reconciling multi-file codebases against rubric criteria. Applied to Passes 1 and 3 where deep logical analysis is required.
+- **Primary — Gemini 3.1 Pro Thinking:** Selected for its extended reasoning capabilities and large context window, critical for reconciling multi-file codebases against rubric criteria. Applied to Passes 1 and 3 where deep logical analysis is required.
 - **Secondary — Gemini 2.5 Flash Lite:** Activated if the primary model exceeds a 60-second latency threshold. Significantly lower cost per token while maintaining acceptable output quality for routine grading.
 - **Final Fallback — GPT-4o:** Reserved for provider outages or repeated reconciliation failures; its strong instruction-following reliability makes it a dependable safety net.
 
