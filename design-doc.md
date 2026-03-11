@@ -228,14 +228,69 @@ Guardrails operate at four layers: input redaction, prompt-injection resistance,
 
 ---
 
-## 6. Deployment and Infrastructure Plan
-*(Dom)*
+## 6. Deployment and Infrastructure Plan (Dom)
+
+**Hosting:** The application will run on DigitalOcean during the pilot phase, as specified in the MAPLE architecture guide document. The FastAPI backend will run locally on a DigitalOcean Droplet (4GB RAM / 2 vCPU) with Docker installed on the same Virtual Machine. The backend will have direct access to the Docker Daemon via the native UNIX socket `/var/run/docker.sock`. This allows us to avoid Docker in Docker complexity and vulnerabilities by allowing instances to run as sibling processes. The Angular frontend will be deployed on DigitalOcean App Platform which allows for static asset serving with little configuration. The PostgreSQL database will be hosted on a DigitalOcean Managed PostgreSQL instance.
+
+**Domain & TLS:** The (TBD) domain will be registered via Namecheap and pointed at the aforementioned DigitalOcean Droplet. TLS will be handled via Let's Encrypt certificates managed and auto-renewed through CertBot. Nginx will be used to act as a reverse proxy such that FastAPI never has to directly interact with TLS. This ensures another layer of security such that secrets are further protected from leaks.
+
+**Environment Management:** All secrets will be managed via dotenv and `.env` files consistent with MAPLE architecture standards. A `.env.example` file with placeholder values will be committed to the repository and the actual `.env` file will be gitignored. The Regex Redactor in the LLM API Call Wrapper ensures secrets are scrubbed from all logs at runtime. Sensitive variables required to run student code for testing, such as API keys, will be decrypted in-memory and injected directly into Docker sandbox containers via the Docker SDK to guarantee secrets are never written to disk.
+
+**Cost Estimate:**
+
+| Item | Estimated Monthly Cost |
+|------|----------------------|
+| DigitalOcean Droplet 4GB/2vCPU (backend) | ~$24 |
+| DigitalOcean Managed PostgreSQL (with pgvector) | ~$15 |
+| DigitalOcean App Platform (frontend) | ~$5 |
+| Gemini API — primary LLM | ~$15–20 |
+| GPT-4o fallback (minimal use) | ~$3–5 |
+| Domain & TLS (annualized) | ~$1 |
+| **Total** | **~$63–70/month** |
 
 ---
 
-## 7. Risk Assessment and Mitigation
-*(Dom)*
+## 7. Risk Assessment and Mitigation (Dom)
 
+### Risk 1: LLM Feedback Quality
+
+**Description:** The multi-pass model could potentially provide hallucinated feedback on edge-case student code due to training and content limitations. A1 deviates from the original MAPLE architecture guide recommendations due to the fact that Gemini has a larger context window and is therefore able to effectively grade and review large repositories of student code.
+
+**Likelihood:** Moderate — time or training data constraints could affect the quality of LLM feedback.
+
+**Impact:** High — poor feedback directly impacts grading quality and accuracy.
+
+**Mitigation:** Constrain the LLM's response format to strictly structured JSON. By following the fallback structure previously listed, GPT-4o is able to handle complex failures and queries.
+
+**Contingency:** Provide the instructor with low-confidence results prior to releasing grading to students. Instructors will have final agency in approving or denying the grading provided by the project.
+
+---
+
+### Risk 2: Docker Sandbox Misconfiguration
+
+**Description:** Ephemeral containers containing student code could be manipulated as a vulnerability for code injection, potentially allowing container escape and privilege escalation if not properly configured.
+
+**Likelihood:** Low — this will be thoroughly tested and reviewed before deployment.
+
+**Impact:** Severe — could allow malicious actors to perform unauthorized activity within the system.
+
+**Mitigation:** Run instances with `--no-new-privileges`, dropped Linux capabilities, read-only filesystems, and strict CPU/memory restrictions implemented with Docker's SDK. Additionally, implement a TTK to avoid runaway processes. OOM and timeout events will inject resource constraint metadata flags into the reasoning object instead of silently failing.
+
+**Contingency:** If vulnerabilities are identified during the pilot, the sandbox will be temporarily disabled so the submission and LLM behavior can be reviewed and the configuration hardened.
+
+---
+
+### Risk 3: LLM/API Cost Overrun
+
+**Description:** Heavy usage during or near assignment deadlines could push past expected budget usage.
+
+**Likelihood:** Moderate.
+
+**Impact:** Moderate — this project is intended to upscale further. The expectation is that the budget would be supplemented by Marist University, which has access to appropriate funds for an upscaled implementation.
+
+**Mitigation:** SHA-based caching will be the main defense against this, ensuring that resubmissions with unchanged code do not re-trigger API calls. Warnings will be implemented to inform the instructor or administrator when costs are nearing budget maximums, and strict submission limitations will be applied to mitigate cost.
+
+**Contingency:** If the quota or limit is reached, the LLM will downgrade to Gemini 2.5 Flash-Lite, and submission limits will be applied such that students can only submit a set number of evaluations.
 ---
 
 ## 8. Timeline and Milestones
