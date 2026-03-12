@@ -2,7 +2,6 @@
 ## System Requirements Specifications
 
 ## 1. Problem Statement and User Stories
-*(Sylvie)*
 
 ### Problem Statement
 
@@ -260,7 +259,6 @@ Guardrails operate at four layers: input redaction, prompt-injection resistance,
 ---
 
 ## 5. Evaluation Plan
-*(Sylvie)*
 
 Evaluation focuses on four areas required by the Project Design Doc: functional correctness, AI-specific metrics, user evaluation, and baseline comparison. Test cases and automation scripts will reside in the `eval/` directory per MAPLE Architecture Guide conventions (`eval/test-cases/`, `eval/results/`, `eval/scripts/`).
 
