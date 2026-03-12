@@ -4,6 +4,42 @@
 ## 1. Problem Statement and User Stories
 *(Sylvie)*
 
+### Problem Statement
+
+The MAPLE A1 Code Submission Evaluator is a module within the broader MAPLE (Marist Automated Programming Learning Environment) ecosystem. This module is intended to address a critical bottleneck in programming course workflows: **scalable and consistent code evaluation**.
+
+Programming courses often require instructors to evaluate large numbers of student code submissions within very limited time frames. Traditional grading depends heavily on the use of test cases, manual inspection of code, and subjective appraisals of style and design. This results in a system that is both time-consuming and inconsistent.
+
+Current automated testing tools typically rely on functional correctness. They do not assess enough other factors: code readability, design quality, adherence to best practices, or the context of a specified rubric. Additionally, the feedback they provide is minimal and impersonal. As a result, students often receive very little insight into why their code failed, or how it could be improved.
+
+The MAPLE A1 Code Submission Evaluator addresses this gap by combining **deterministic testing** with **AI-assisted analysis**. The system automatically clones a student's GitHub repository, executes instructor-provided test suites inside a secure sandbox environment, and uses a Large Language Model (LLM) to analyze the codebase and generate rubric-aligned feedback.
+
+The goal of A1 is to produce consistent evaluation results while significantly reducing the time instructors spend grading. The system acts as an intelligent assistant that provides preliminary grading and detailed feedback which instructors can review before final release.
+
+### Core MVP User Stories
+
+1. **Student submission** — As a student, I want to submit my assignment via a GitHub repository link so that my code can be automatically evaluated without manually uploading files.
+
+2. **Instructor rubric import** — As an instructor, I want to import standardized JSON rubrics so that grading criteria can be reused across assignments and integrated with the MAPLE A5 Rubric Engine.
+
+3. **Automated test execution** — As an instructor, I want the system to run deterministic test suites against student code so that functional correctness can be evaluated consistently and objectively.
+
+4. **Rubric-aligned grading** — As an instructor, I want evaluations to map directly to rubric criteria so that grades remain consistent with course grading standards.
+
+5. **AI feedback generation** — As a student, I want detailed feedback with actionable recommendations (for example localized suggestions) explaining why my code lost points so that I can improve my programming skills and learn from mistakes.
+
+6. **Instructor review before release** — As an instructor, I want to review AI-generated feedback before releasing it to students so that I can correct errors and maintain final grading authority.
+
+7. **Secure code execution** — As a system administrator, I want student code to run inside isolated containers so that malicious or poorly written code cannot compromise the grading infrastructure.
+
+8. **Asynchronous processing visibility** — As a student, I want to receive status updates as my submission is processed so that I know when evaluation is complete.
+
+### Secondary / Stretch User Stories
+
+1. **Historical grading records** — As an instructor, I want evaluation results stored in a database so that I can review grading history and analyze student performance trends.
+
+2. **Evaluation transparency** — As a student, I want visibility into test results and structured feedback explanations so that I understand how my score was determined and can verify the system's reasoning.
+
 ---
 
 ## 2. System Architecture
@@ -225,6 +261,50 @@ Guardrails operate at four layers: input redaction, prompt-injection resistance,
 
 ## 5. Evaluation Plan
 *(Sylvie)*
+
+Evaluation focuses on four areas required by the Project Design Doc: functional correctness, AI-specific metrics, user evaluation, and baseline comparison. Test cases and automation scripts will reside in the `eval/` directory per MAPLE Architecture Guide conventions (`eval/test-cases/`, `eval/results/`, `eval/scripts/`).
+
+### 1. Functional Evaluation
+
+Functional evaluation verifies that each stage of the grading pipeline operates correctly. Because the system processes submissions asynchronously and involves multiple components, tests validate each stage independently and the end-to-end workflow.
+
+- **Repository ingestion and preprocessing.** Tests verify that the system clones a GitHub repository, strips unnecessary files (for example `node_modules`, `venv`, compiled binaries, and `.git`), and prepares cleaned source code for analysis. Test cases include repositories with different languages, nested directory structures, and malformed links. *Expected behavior:* valid repositories are processed successfully, while invalid inputs trigger `VALIDATION_ERROR` (400) as specified in the MAPLE API conventions. Pre-flight checks for language-specific configuration files (for example `package.json`) are also validated.
+
+- **Sandboxed execution.** Tests verify that student code runs inside ephemeral Docker containers as described in the system architecture. Success criteria include compiling and running the code, capturing test output as structured JSON, and terminating the container within the defined 30-second time limit. Edge cases such as infinite loops, memory overconsumption, and failing builds must trigger resource constraint metadata flags (exit codes 137 or 124) that are injected into the reasoning object rather than failing silently.
+
+- **Pipeline completion and persistence.** Tests verify that the full grading pipeline produces a complete response object conforming to the MAPLE Standard Response Envelope and that `EvaluationResult` records are correctly stored in the PostgreSQL database with `deterministic_score`, `ai_feedback_json`, and `metadata_json` fields populated.
+
+### 2. AI-Specific Evaluation
+
+Because A1 combines deterministic test results with LLM-generated feedback, evaluation requires several AI-specific metrics including grading consistency, correlation with human grades, and calibration.
+
+| Metric | Description | Success Criteria |
+|--------|-------------|------------------|
+| **Rubric alignment accuracy** (correlation with human grades) | A sample set of student submissions will be graded manually by instructors using the same rubric used by the system. AI-generated `criteria_scores` will then be compared with instructor scores. | At least 80% of rubric criteria evaluations fall within ±5 points of the instructor score. |
+| **Evaluation consistency** | The same submission will be evaluated multiple times under identical conditions. Score variance across runs will be measured to determine whether the system produces stable grading results. | Score variance of no more than 3 points across repeated evaluations. |
+| **Calibration and flag accuracy** | When the AI assigns scores below "Exemplary," it must produce recommendation objects with localized feedback. Evaluators will verify that low-confidence cases trigger appropriate entries in the `flags` array (e.g. `ai_confidence_low`) and that feedback usefulness is rated by instructors on a five-point scale for clarity, relevance, and instructional value. | Average rating of at least 4 out of 5. |
+
+### 3. User Evaluation
+
+During the pilot phase, both instructors and students will provide qualitative feedback through short surveys distributed after assignment submissions and grading cycles.
+
+- **Student surveys** will focus on whether feedback clearly explains mistakes, whether the submission workflow (providing a GitHub link and waiting for evaluation) is straightforward, and whether the recommendations help students improve their code.
+
+- **Instructor surveys** will focus on whether the system reduces grading time, whether AI-generated feedback aligns with instructor expectations, and whether the review interface allows instructors to maintain oversight before releasing results to students.
+
+**Success criteria:** A majority of instructors report a noticeable reduction in grading workload, and a majority of students report that the feedback helped them better understand programming mistakes.
+
+### 4. Baseline Comparison
+
+The baseline workflow without A1 involves manually cloning student repositories, running test suites locally, and writing feedback individually for each student. This process is time intensive and often inconsistent between graders.
+
+Comparison metrics will include:
+
+- **Grading time per submission** — measured by comparing the average time required to grade submissions manually versus the automated evaluation process
+- **Depth and structure of feedback provided**
+- **Grading consistency between evaluators**
+
+The system will be considered successful if it significantly reduces grading time while maintaining grading accuracy comparable to instructor evaluation. Additionally, success includes consistently producing structured, rubric-aligned feedback for every submission.
 
 ---
 
