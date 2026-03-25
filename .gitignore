@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node
+node_modules/
+dist/
+
+# Environment
+.env
+
+# Data
+data/raw/*
+!data/raw/.gitkeep
