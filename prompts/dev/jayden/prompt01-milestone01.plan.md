@@ -6,7 +6,10 @@ todos:
     content: "Task 1: Create MAPLE directory tree, FastAPI stub, requirements.txt, .gitignore, README stub, branch setup"
     status: pending
   - id: task2-provision-do
-    content: "Task 2: Provision DigitalOcean Droplet (Ubuntu 22.04, Python, Docker, Nginx, Git), Managed PostgreSQL (pgvector enabled), App Platform static site"
+    content: "Task 2: Provision DigitalOcean Droplet and Managed PostgreSQL"
+    status: in_progress
+  - id: task2b-app-platform
+    content: "Task 2b: Create App Platform static site (Deferred pending GitHub approval)"
     status: pending
   - id: task3-nginx-ip
     content: "Task 3: Configure Nginx reverse proxy (proxy_pass to Uvicorn) using Droplet IP only -- domain and TLS deferred until domain is acquired"
@@ -118,7 +121,7 @@ All three cloud resources are described in [design-doc.md](design-doc.md) Sectio
   - Create a database named `maple_a1` and a dedicated user (not `doadmin` for app access).
   - Enable the `pgvector` extension: `CREATE EXTENSION IF NOT EXISTS vector;` (needed for Milestone 3, but cheap to enable now -- avoids a future migration blocker).
   - Add the Droplet's IP to the database trusted-sources allowlist.
-4. **Create the App Platform static site** (for Angular frontend).
+4. **Create the App Platform static site** (for Angular frontend). *(DEFERRED: Waiting for GitHub org approval to link DO Apps. Will circle back later in the milestone).*
   - Connect to the repo's `client/` directory; build command `ng build --configuration production`; output dir `dist/`.
   - This can remain a placeholder until Sylvie has an Angular build, but the App Platform resource should exist so the deployment pipeline is proven.
 5. **Record connection details** as entries for the `.env.example` (Task 4 below):
