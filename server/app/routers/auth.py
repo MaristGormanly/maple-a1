@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from server.app.utils.responses import error_response
+from ..utils.responses import error_response
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

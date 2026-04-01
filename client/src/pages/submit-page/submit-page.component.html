@@ -1,0 +1,49 @@
+<div class="submit-page">
+  <h1>Submit Repository for Evaluation</h1>
+
+  @if (errorMessage) {
+    <div class="error-banner" role="alert">{{ errorMessage }}</div>
+  }
+
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    <div class="field">
+      <label for="githubUrl">GitHub URL <span class="required">*</span></label>
+      <input
+        id="githubUrl"
+        type="text"
+        formControlName="githubUrl"
+        placeholder="https://github.com/owner/repo"
+      />
+      @if (form.controls.githubUrl.touched && form.controls.githubUrl.invalid) {
+        <span class="field-error">Must be a valid GitHub repository URL (https://github.com/owner/repo)</span>
+      }
+    </div>
+
+    <div class="field">
+      <label for="assignmentId">Assignment ID <span class="optional">(optional)</span></label>
+      <input
+        id="assignmentId"
+        type="text"
+        formControlName="assignmentId"
+        placeholder="e.g. CS101-A1"
+      />
+    </div>
+
+    <div class="field">
+      <label for="rubric">Rubric File <span class="required">*</span></label>
+      <input
+        id="rubric"
+        type="file"
+        accept=".json,.txt"
+        (change)="onFileChange($event)"
+      />
+      @if (fileError) {
+        <span class="field-error">A rubric file is required.</span>
+      }
+    </div>
+
+    <button type="submit" [disabled]="submitting">
+      {{ submitting ? 'Submitting...' : 'Submit' }}
+    </button>
+  </form>
+</div>
