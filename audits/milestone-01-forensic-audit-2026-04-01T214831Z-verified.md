@@ -1,6 +1,8 @@
 # Milestone 1 forensic audit (verified 2026-04-01)
 
 **Auditor:** Jayden (with Cursor-assisted verification)  
+**Audit timestamp (UTC):** 2026-04-01T21:48:31Z  
+**Filename:** `audits/milestone-01-forensic-audit-2026-04-01T214831Z-verified.md`  
 **Committed as:** canonical Milestone 1 audit for the `maple-a1` repository.
 
 ## Stale artifact warning
