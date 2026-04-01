@@ -68,7 +68,7 @@ The A1 module operates as an independently deployable service within the MAPLE p
 
 | ID | Requirement | Priority |
 | :--- | :--- | :--- |
-| **FR-1.1** | The system shall accept a GitHub URL or raw content via the `/evaluate` endpoint. | P0 |
+| **FR-1.1** | The system shall accept a GitHub repository URL via the `/evaluate` endpoint for Milestone 1 ingestion. Raw content submission is a future extension, not part of the current backend contract. | P0 |
 | **FR-1.2** | The system shall isolate code execution using Docker to prevent host compromise. | P0 |
 | **FR-1.3** | The system shall generate a JSON report of test results from the sandbox to provide context to the LLM. | P0 |
 | **FR-1.4** | The AI shall generate scores and feedback that map 1-to-1 with criteria provided by the A5 Rubric Engine. | P1 |
@@ -96,11 +96,19 @@ Per the Architecture Guide, the A1 module must implement the following:
 **Request Body:**
 ```json
 {
-  "submission_id": "sub_def456",
-  "github_url": "[https://github.com/marist-student/assignment-1](https://github.com/marist-student/assignment-1)",
-  "rubric_id": "rubric_ghi789",
-  "options": {
-    "language": "python",
-    "provide_feedback": true
+  "github_url": "https://github.com/marist-student/assignment-1",
+  "assignment_id": "asgn_abc123",
+  "rubric": {
+    "title": "Assignment 1 Review",
+    "criteria": [
+      {
+        "name": "Correctness",
+        "description": "Program behavior matches the specification"
+      },
+      {
+        "name": "Code Quality",
+        "description": "Code is readable and well organized"
+      }
+    ]
   }
 }

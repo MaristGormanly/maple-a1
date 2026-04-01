@@ -36,7 +36,7 @@
 **Tasks:**
 - [ ] Implement GitHub PAT-based repository cloning into `data/raw/` using the GitHub API
 - [ ] Implement Repository Pre-processor: strip `node_modules`, `venv`, compiled binaries, `.git`
-- [ ] Implement SHA + Rubric ID caching key; skip re-cloning on cache hit
+- [ ] Implement SHA + normalized rubric digest caching key; skip re-cloning on cache hit
 - [ ] Angular scaffold: student submission form (GitHub URL + assignment ID), status polling page
 
 ---

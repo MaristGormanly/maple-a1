@@ -20,7 +20,7 @@ and either grants access (passing user details to the route) or rejects it with 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from typing import Callable
-from server.app.utils.security import decode_access_token
+from ..utils.security import decode_access_token
 
 # Defines the security scheme for FastAPI's auto-generated OpenAPI documentation (Swagger UI).
 # It tells the client where to send credentials to obtain a bearer token.

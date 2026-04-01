@@ -1,0 +1,39 @@
+@if (data) {
+  <div class="status-card">
+    <p class="submission-id">{{ data.submission_id }}</p>
+
+    <div class="row">
+      <span class="label">Status</span>
+      <span class="badge" [class.badge--green]="data.status === 'cloned' || data.status === 'cached'">
+        {{ data.status }}
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="label">GitHub URL</span>
+      <span>{{ data.github_url }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Assignment ID</span>
+      <span>{{ data.assignment_id ?? 'None' }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Commit</span>
+      <span class="mono">{{ abbrev(data.commit_hash) }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Rubric digest</span>
+      <span class="mono">{{ abbrev(data.rubric_digest) }}</span>
+    </div>
+
+    <a routerLink="/submit">Submit another</a>
+  </div>
+} @else {
+  <div class="status-card">
+    <p>Status lookup is not yet available. A GET /submissions/:id endpoint is pending backend implementation.</p>
+    <a routerLink="/submit">Submit another</a>
+  </div>
+}
