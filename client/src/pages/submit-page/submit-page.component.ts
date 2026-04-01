@@ -14,7 +14,7 @@ export class SubmitPageComponent {
   form = new FormGroup({
     githubUrl: new FormControl('', [
       Validators.required,
-      Validators.pattern(/^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/?$/),
+      Validators.pattern(/^https:\/\/(www\.)?github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/?$/),
     ]),
     assignmentId: new FormControl(''),
   });

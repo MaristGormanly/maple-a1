@@ -33,7 +33,11 @@
   </div>
 } @else {
   <div class="status-card">
-    <p>Status lookup is not yet available. A GET /submissions/:id endpoint is pending backend implementation.</p>
+    @if (submissionId) {
+      <p>Submission <strong>{{ submissionId }}</strong> was received, but live status lookup is not yet available. A <code>GET /api/v1/code-eval/submissions/:id</code> endpoint is pending backend implementation.</p>
+    } @else {
+      <p>No submission data found. Please <a routerLink="/submit">submit a repository</a> to begin.</p>
+    }
     <a routerLink="/submit">Submit another</a>
   </div>
 }

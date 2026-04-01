@@ -417,7 +417,6 @@ async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONR
     return build_error_response(exc.status_code, exc.code, exc.message)
 
 
-
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
 async def evaluate_submission(
     github_url: str = Form(...),

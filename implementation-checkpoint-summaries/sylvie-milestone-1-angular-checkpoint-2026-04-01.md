@@ -47,8 +47,6 @@ Angular 21 uses the standalone component architecture — there is no `AppModule
 - `apiBaseUrl`: `http://localhost:8000` for local dev, empty string for prod (relative URL)
 - `devToken`: a signed JWT for authenticating against the backend during local development
 
-The dev token is a real signed JWT — not a placeholder string. It was generated using `create_access_token()` from `server/app/utils/security.py` against the `SECRET_KEY` set in `.env`. A plain string will not pass the backend's `jwt.decode()` validation.
-
 `ACCESS_TOKEN_EXPIRE_MINUTES` in `.env` was extended to `43200` (30 days) to avoid token expiry during Milestone 1 development. The token was regenerated after this change.
 
 ### 3. TypeScript API Types Created
@@ -126,8 +124,7 @@ A clearly marked TODO comment in `ngOnInit` marks where polling logic should be 
 A full audit of all four Milestone 1 tasks was run against the codebase before this checkpoint was written. Findings addressed:
 
 1. **URL regex too permissive** — Fixed. Pattern now enforces `owner/repo` structure client-side.
-2. **Dev token must be a real JWT** — The original prompt suggested a plain placeholder string. This was identified as incorrect before implementation. A properly signed JWT was generated and placed in `environment.ts`.
-3. **`ACCESS_TOKEN_EXPIRE_MINUTES` too short** — Extended to 30 days to avoid expiry during development.
+2. **`ACCESS_TOKEN_EXPIRE_MINUTES` too short** — Extended to 30 days to avoid expiry during development.
 
 ---
 

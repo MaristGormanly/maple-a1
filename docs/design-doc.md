@@ -115,33 +115,19 @@ The backend exposes several key RESTful endpoints to facilitate the module's pri
 #### `POST /api/v1/code-eval/evaluate`
 
 - **Purpose:** Triggers the asynchronous grading pipeline for a student's code.
-- **Request Format:** JSON containing submission details, an optional assignment context, teacher-supplied rubric content, and options (including `enable_lint_review`).
-```json
-{
-  "submission_id": "sub_def456",
-  "github_url": "https://github.com/student/assignment-1",
-  "assignment_id": "asgn_abc123",
-  "rubric": {
-    "title": "Assignment 1 Review",
-    "criteria": [
-      {
-        "name": "Correctness",
-        "description": "Program behavior matches the specification"
-      },
-      {
-        "name": "Code Quality",
-        "description": "Code is readable, organized, and maintainable"
-      }
-    ]
-  },
-  "options": {
-    "language": "python",
-    "provide_feedback": true,
-    "enable_lint_review": true
-  }
-}
+- **Request Format:** `multipart/form-data` with the following fields:
+  - `github_url` (string, required) — the student's GitHub repository URL
+  - `assignment_id` (string, optional) — the assignment identifier
+  - `rubric` (file, required) — a UTF-8 encoded text or JSON file containing the rubric content
 ```
-- **Response Format:** For the current Milestone 1 ingestion flow, JSON returns a generated `submission_id`, the resolved `commit_hash`, the normalized `rubric_digest`, the processed local repository path, and a status such as `"cloned"` or `"cached"`, wrapped in the MAPLE Standard Response Envelope.
+POST /api/v1/code-eval/evaluate
+Content-Type: multipart/form-data
+
+github_url=https://github.com/student/assignment-1
+assignment_id=asgn_abc123
+rubric=<rubric file upload>
+```
+- **Response Format:** For the current Milestone 1 ingestion flow, JSON returns a server-generated `submission_id`, the resolved `commit_hash`, the normalized `rubric_digest`, the processed local repository path, and a status such as `"cloned"` or `"cached"`, wrapped in the MAPLE Standard Response Envelope.
 ```json
 {
   "success": true,
