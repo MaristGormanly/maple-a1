@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -13,6 +14,7 @@ from app.cache import (
     save_repository_cache_entry,
 )
 from app.main import GitHubRepoMetadata, MapleAPIError, app
+from app.middleware.auth import get_current_user
 from app.preprocessing import RepositoryPreprocessingError
 
 
@@ -21,19 +23,45 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class EvaluateSubmissionIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        app.dependency_overrides[get_current_user] = lambda: {"sub": "test-user", "role": "user"}
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+
+    def _post_evaluate(
+        self,
+        client: TestClient,
+        *,
+        github_url: str,
+        assignment_id: str | None = None,
+        rubric: dict | list | str,
+    ):
+        data: dict[str, str] = {"github_url": github_url}
+        if assignment_id is not None:
+            data["assignment_id"] = assignment_id
+        rubric_bytes = (
+            json.dumps(rubric).encode("utf-8")
+            if isinstance(rubric, (dict, list))
+            else rubric.encode("utf-8")
+        )
+        return client.post(
+            "/api/v1/code-eval/evaluate",
+            data=data,
+            files={"rubric": ("rubric.json", rubric_bytes, "application/json")},
+        )
+
     def test_evaluate_submission_rejects_non_github_urls_before_clone_logic_runs(self) -> None:
         with patch("app.main.get_required_github_pat") as pat_mock, patch(
             "app.main.validate_github_repo_access",
             new=AsyncMock(),
         ) as access_mock:
             client = TestClient(app)
-            response = client.post(
-                "/api/v1/code-eval/evaluate",
-                json={
-                    "github_url": "https://example.com/student/example-assignment",
-                    "assignment_id": "asgn_abc123",
-                    "rubric": self._sample_rubric(),
-                },
+            response = self._post_evaluate(
+                client,
+                github_url="https://example.com/student/example-assignment",
+                assignment_id="asgn_abc123",
+                rubric=self._sample_rubric(),
             )
 
         self.assertEqual(response.status_code, 400)
@@ -56,13 +84,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             new=AsyncMock(),
         ) as access_mock:
             client = TestClient(app)
-            response = client.post(
-                "/api/v1/code-eval/evaluate",
-                json={
-                    "github_url": "https://github.com/student/example-assignment",
-                    "assignment_id": "asgn_abc123",
-                    "rubric": self._sample_rubric(),
-                },
+            response = self._post_evaluate(
+                client,
+                github_url="https://github.com/student/example-assignment",
+                assignment_id="asgn_abc123",
+                rubric=self._sample_rubric(),
             )
 
         self.assertEqual(response.status_code, 500)
@@ -89,13 +115,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             new=AsyncMock(),
         ) as resolve_sha_mock:
             client = TestClient(app)
-            response = client.post(
-                "/api/v1/code-eval/evaluate",
-                json={
-                    "github_url": "https://github.com/student/example-assignment",
-                    "assignment_id": "asgn_abc123",
-                    "rubric": self._sample_rubric(),
-                },
+            response = self._post_evaluate(
+                client,
+                github_url="https://github.com/student/example-assignment",
+                assignment_id="asgn_abc123",
+                rubric=self._sample_rubric(),
             )
 
         self.assertEqual(response.status_code, 401)
@@ -125,13 +149,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             new=AsyncMock(),
         ) as clone_mock:
             client = TestClient(app)
-            response = client.post(
-                "/api/v1/code-eval/evaluate",
-                json={
-                    "github_url": "https://github.com/student/example-assignment",
-                    "assignment_id": "asgn_abc123",
-                    "rubric": self._sample_rubric(),
-                },
+            response = self._post_evaluate(
+                client,
+                github_url="https://github.com/student/example-assignment",
+                assignment_id="asgn_abc123",
+                rubric=self._sample_rubric(),
             )
 
         self.assertEqual(response.status_code, 400)
@@ -150,13 +172,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             new=AsyncMock(),
         ) as access_mock:
             client = TestClient(app)
-            response = client.post(
-                "/api/v1/code-eval/evaluate",
-                json={
-                    "github_url": "https://github.com/student/example-assignment",
-                    "assignment_id": "asgn_abc123",
-                    "rubric": {},
-                },
+            response = self._post_evaluate(
+                client,
+                github_url="https://github.com/student/example-assignment",
+                assignment_id="asgn_abc123",
+                rubric={},
             )
 
         self.assertEqual(response.status_code, 400)
@@ -164,7 +184,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
         self.assert_error_response_contract(
             payload=payload,
             expected_code="VALIDATION_ERROR",
-            expected_message="Value error, rubric must be a non-empty string, object, or array",
+            expected_message="rubric must be a non-empty string, object, or array.",
         )
         pat_mock.assert_not_called()
         access_mock.assert_not_called()
@@ -212,13 +232,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 new=AsyncMock(side_effect=clone_side_effect),
             ):
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
             self.assertEqual(response.status_code, 200)
@@ -293,13 +311,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 "app.main.preprocess_repository",
             ) as preprocess_mock:
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
             self.assertEqual(response.status_code, 200)
@@ -364,13 +380,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 new=AsyncMock(side_effect=clone_side_effect),
             ) as clone_mock:
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
             self.assertEqual(response.status_code, 200)
@@ -456,13 +470,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 new=AsyncMock(side_effect=clone_side_effect),
             ) as clone_mock:
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_coursework",
-                        "rubric": refreshed_rubric,
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_coursework",
+                    rubric=refreshed_rubric,
                 )
 
             self.assertEqual(response.status_code, 200)
@@ -517,13 +529,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 "app.main.preprocess_repository",
             ) as preprocess_mock:
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
             self.assertEqual(response.status_code, 500)
@@ -570,13 +580,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 side_effect=RepositoryPreprocessingError("preprocessing failed"),
             ):
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
             self.assertEqual(response.status_code, 500)
@@ -622,13 +630,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 "app.main.preprocess_repository",
             ) as preprocess_mock:
                 client = TestClient(app)
-                response = client.post(
-                    "/api/v1/code-eval/evaluate",
-                    json={
-                        "github_url": "https://github.com/student/example-assignment",
-                        "assignment_id": "asgn_abc123",
-                        "rubric": self._sample_rubric(),
-                    },
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id="asgn_abc123",
+                    rubric=self._sample_rubric(),
                 )
 
         self.assertEqual(response.status_code, 502)

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -10,11 +11,11 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
 
 from .cache import (
     RepositoryCacheError,
@@ -26,10 +27,12 @@ from .cache import (
 )
 from .config import get_required_github_pat, settings
 from .preprocessing import RepositoryPreprocessingError, preprocess_repository
+from .middleware.auth import get_current_user
 from .routers import auth
 from .utils.responses import success_response
 
 APP_VERSION = "1.0.0"
+_url_adapter = TypeAdapter(HttpUrl)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_REPOS_ROOT = PROJECT_ROOT / "data" / "raw"
 CACHE_INDEX_PATH = PROJECT_ROOT / "data" / "cache" / "repository-cache-index.json"
@@ -93,28 +96,6 @@ def parse_github_repo_url(url: HttpUrl) -> tuple[str, str]:
 
     return owner, repo_name
 
-
-class SubmissionRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    github_url: HttpUrl
-    assignment_id: str | None = Field(default=None, min_length=1)
-    rubric: dict[str, Any] | list[Any] | str
-
-    @field_validator("github_url")
-    @classmethod
-    def validate_github_url(cls, value: HttpUrl) -> HttpUrl:
-        parse_github_repo_url(value)
-        return value
-
-    @field_validator("rubric")
-    @classmethod
-    def validate_rubric(cls, value: dict[str, Any] | list[Any] | str) -> dict[str, Any] | list[Any] | str:
-        if isinstance(value, str) and not value.strip():
-            raise ValueError("rubric must be a non-empty string, object, or array")
-        if isinstance(value, (dict, list)) and not value:
-            raise ValueError("rubric must be a non-empty string, object, or array")
-        return value
 
 
 class SubmissionData(BaseModel):
@@ -433,7 +414,52 @@ async def handle_request_validation_error(
 
 
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
-async def evaluate_submission(payload: SubmissionRequest) -> SubmissionResponse:
+async def evaluate_submission(
+    github_url: str = Form(...),
+    assignment_id: str | None = Form(default=None),
+    rubric: UploadFile = File(...),
+    _current_user: dict = Depends(get_current_user),
+) -> SubmissionResponse:
+    try:
+        validated_url = _url_adapter.validate_python(github_url)
+    except ValidationError:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="github_url must be a valid URL.",
+        )
+    try:
+        repo_owner, repo_name = parse_github_repo_url(validated_url)
+    except ValueError as exc:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message=str(exc),
+        ) from exc
+
+    rubric_bytes = await rubric.read()
+    try:
+        rubric_text = rubric_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="Rubric file must be UTF-8 encoded text or JSON.",
+        ) from exc
+    try:
+        rubric_content: dict[str, Any] | list[Any] | str = json.loads(rubric_text)
+    except json.JSONDecodeError:
+        rubric_content = rubric_text
+
+    try:
+        rubric_fingerprint = fingerprint_rubric_content(rubric_content)
+    except RepositoryCacheError as exc:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message=str(exc),
+        ) from exc
+
     try:
         github_pat = get_required_github_pat()
     except RuntimeError as exc:
@@ -443,16 +469,7 @@ async def evaluate_submission(payload: SubmissionRequest) -> SubmissionResponse:
             message=str(exc),
         ) from exc
 
-    repo_owner, repo_name = parse_github_repo_url(payload.github_url)
     repo_metadata = await validate_github_repo_access(repo_owner, repo_name, github_pat)
-    try:
-        rubric_fingerprint = fingerprint_rubric_content(payload.rubric)
-    except RepositoryCacheError as exc:
-        raise MapleAPIError(
-            status_code=400,
-            code="VALIDATION_ERROR",
-            message=str(exc),
-        ) from exc
     resolved_commit_hash = await resolve_repository_head_commit_hash(
         repo_owner,
         repo_name,
@@ -476,8 +493,8 @@ async def evaluate_submission(payload: SubmissionRequest) -> SubmissionResponse:
             success=True,
             data=SubmissionData(
                 submission_id=submission_id,
-                github_url=str(payload.github_url),
-                assignment_id=payload.assignment_id,
+                github_url=github_url,
+                assignment_id=assignment_id,
                 rubric_digest=rubric_fingerprint.digest,
                 status="cached",
                 local_repo_path=cached_entry.local_repo_path,
@@ -515,7 +532,7 @@ async def evaluate_submission(payload: SubmissionRequest) -> SubmissionResponse:
     try:
         cache_entry = create_repository_cache_entry(
             cache_key=actual_cache_key,
-            assignment_id=payload.assignment_id,
+            assignment_id=assignment_id,
             rubric_fingerprint=rubric_fingerprint,
             full_repo_name=repo_metadata.full_name,
             local_repo_path=final_repo_path,
@@ -535,8 +552,8 @@ async def evaluate_submission(payload: SubmissionRequest) -> SubmissionResponse:
         success=True,
         data=SubmissionData(
             submission_id=submission_id,
-            github_url=str(payload.github_url),
-            assignment_id=payload.assignment_id,
+            github_url=github_url,
+            assignment_id=assignment_id,
             rubric_digest=rubric_fingerprint.digest,
             status="cloned",
             local_repo_path=str(final_repo_path.relative_to(PROJECT_ROOT)),
