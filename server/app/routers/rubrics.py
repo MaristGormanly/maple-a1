@@ -55,7 +55,17 @@ async def create_rubric(request: RubricCreateRequest, db: AsyncSession = Depends
             message=f"Sum of criteria max_points ({criteria_total}) does not equal total_points ({request.total_points})",
         )
 
-    rubric_id = uuid.UUID(request.rubric_id) if request.rubric_id else uuid.uuid4()
+    if request.rubric_id:
+        try:
+            rubric_id = uuid.UUID(request.rubric_id)
+        except ValueError:
+            return error_response(
+                status_code=400,
+                code="VALIDATION_ERROR",
+                message="rubric_id must be a valid UUID",
+            )
+    else:
+        rubric_id = uuid.uuid4()
 
     rubric = Rubric(
         id=rubric_id,

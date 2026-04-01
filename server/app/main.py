@@ -1,9 +1,3 @@
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
-from server.app.config import settings
-from server.app.routers import auth, rubrics
-from server.app.utils.responses import success_response, error_response
 import asyncio
 import json
 import os
@@ -32,10 +26,11 @@ from .cache import (
     save_repository_cache_entry,
 )
 from .config import get_required_github_pat, settings
-from .preprocessing import RepositoryPreprocessingError, preprocess_repository
 from .middleware.auth import get_current_user
-from .routers import auth
-from .utils.responses import success_response
+from .preprocessing import RepositoryPreprocessingError, preprocess_repository
+from .routers import auth, rubrics
+from .services.llm import redact
+from .utils.responses import error_response, success_response
 
 APP_VERSION = "1.0.0"
 _url_adapter = TypeAdapter(HttpUrl)
@@ -221,9 +216,9 @@ async def clone_repository(clone_url: str, destination_path: Path, github_pat: s
         if destination_path.exists():
             shutil.rmtree(destination_path, ignore_errors=True)
 
-        sanitized_stderr = (
-            stderr.decode("utf-8", errors="replace").replace(github_pat, "[REDACTED]").strip()
-        )
+        sanitized_stderr = redact(
+            stderr.decode("utf-8", errors="replace")
+        ).replace(github_pat, "[REDACTED]").strip()
         detail = "Repository clone failed."
         if sanitized_stderr:
             detail = f"{detail} {sanitized_stderr}"
@@ -421,15 +416,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONResponse:
     return build_error_response(exc.status_code, exc.code, exc.message)
 
-
-@app.exception_handler(RequestValidationError)
-async def handle_request_validation_error(
-    _request: Request, exc: RequestValidationError
-) -> JSONResponse:
-    message = "Request validation failed."
-    if exc.errors():
-        message = exc.errors()[0].get("msg", message)
-    return build_error_response(400, "VALIDATION_ERROR", message)
 
 
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
