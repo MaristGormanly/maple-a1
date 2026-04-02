@@ -116,8 +116,8 @@ The backend exposes several key RESTful endpoints to facilitate the module's pri
 
 - **Purpose:** Triggers the asynchronous grading pipeline for a student's code.
 - **Request Format:** `multipart/form-data` with the following fields:
-  - `github_url` (string, required) — the student's GitHub repository URL
-  - `assignment_id` (string, optional) — the assignment identifier
+  - `github_url` (string, required) — the student's HTTPS GitHub repository URL
+  - `assignment_id` (string, required) — the assignment UUID
   - `rubric` (file, required) — a UTF-8 encoded text or JSON file containing the rubric content
 ```
 POST /api/v1/code-eval/evaluate

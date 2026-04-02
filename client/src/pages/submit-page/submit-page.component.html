@@ -20,13 +20,16 @@
     </div>
 
     <div class="field">
-      <label for="assignmentId">Assignment ID <span class="optional">(optional)</span></label>
+      <label for="assignmentId">Assignment ID <span class="required">*</span></label>
       <input
         id="assignmentId"
         type="text"
         formControlName="assignmentId"
-        placeholder="e.g. CS101-A1"
+        placeholder="e.g. 11111111-2222-3333-4444-555555555555"
       />
+      @if (form.controls.assignmentId.touched && form.controls.assignmentId.invalid) {
+        <span class="field-error">Assignment ID is required.</span>
+      }
     </div>
 
     <div class="field">
