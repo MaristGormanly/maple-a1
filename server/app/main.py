@@ -28,7 +28,7 @@ from .cache import (
 from .config import get_required_github_pat, settings
 from .middleware.auth import get_current_user
 from .preprocessing import RepositoryPreprocessingError, preprocess_repository
-from .routers import auth, rubrics
+from .routers import assignments, auth, rubrics, submissions
 from .services.llm import redact
 from .utils.responses import error_response, success_response
 
@@ -397,7 +397,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/code-eval")
+app.include_router(assignments.router, prefix="/api/v1/code-eval")
 app.include_router(rubrics.router, prefix="/api/v1/code-eval")
+app.include_router(submissions.router, prefix="/api/v1/code-eval")
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
