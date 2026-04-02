@@ -22,6 +22,7 @@ def upgrade() -> None:
         "users",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("email", sa.String(), nullable=False),
+        sa.Column("password_hash", sa.String(), nullable=True),
         sa.Column("role", sa.String(), nullable=False),
         sa.Column("github_username", sa.String(), nullable=True),
         sa.Column("github_pat_hash", sa.String(), nullable=True),

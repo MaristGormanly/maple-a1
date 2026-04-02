@@ -23,7 +23,7 @@
 **Summary:** By the end of these tasks, the server will have a fully migrated PostgreSQL schema, a validated rubric ingestion endpoint, and a regex-based redactor that sanitizes secrets before any future LLM calls. This forms the backend core that the frontend and ingestion pipeline both depend on.
 
 **Tasks:**
-- [ ] Implement PostgreSQL schema: `User`, `Assignment`, `Rubric`, `Submission`, `EvaluationResult` via SQLAlchemy migrations
+- [x] Implement PostgreSQL schema: `User`, `Assignment`, `Rubric`, `Submission`, `EvaluationResult` via SQLAlchemy migrations
 - [x] Implement `POST /api/v1/code-eval/rubrics` endpoint with A5-compatible JSON schema validation
 - [x] Implement Regex Redactor in `services/llm.py` (strip PATs, env vars, emails before any external call)
 
