@@ -23,9 +23,9 @@ This guide is for **engineers** who need access to production, deployment steps,
 
 | Component | Details |
 |-----------|---------|
-| **Server** | Ubuntu 22.04 Droplet (`161.35.125.120`) on DigitalOcean — **4 GB RAM / 2 vCPU** (matches [`docs/design-doc.md`](design-doc.md) §6 sizing) |
+| **Server** | Ubuntu **LTS** Droplet (`161.35.125.120`) on DigitalOcean — **4 GB RAM / 2 vCPU** (matches [`docs/design-doc.md`](design-doc.md) §6 sizing; pilot image **24.04** as deployed) |
 | **Database** | DigitalOcean Managed PostgreSQL 16 with **pgvector** enabled for RAG-style storage |
-| **Reverse proxy** | Nginx (IP-only for now) |
+| **Reverse proxy** | Nginx at **`https://api.maple-a1.com`** (Let’s Encrypt, Certbot). Structure: [Nginx production structure](#nginx-production-structure-apimaple-a1com). |
 | **Process manager** | systemd (`maple-a1.service`) |
 | **Application** | FastAPI (Uvicorn), repo on Droplet at `/opt/maple-a1`, runtime user **`maple`**; SSH as **`root`**, then `su - maple` for app work |
 
@@ -52,15 +52,163 @@ The [deployment and infrastructure plan in `docs/design-doc.md`](design-doc.md) 
 | **Docker** | Docker on the Droplet; backend uses `/var/run/docker.sock` for sandboxed execution | Not described in detail in this file; confirm on the Droplet if you need the sandbox |
 | **Frontend (Angular)** | Section 6 mentions DigitalOcean App Platform for static frontend hosting | **App Platform is not used for Angular** in this project; hosting for the Angular app is separate from App Platform (see team for URL and hosting details). Consider updating §6 in `docs/design-doc.md` to match. |
 | **CI/CD** | GitHub Actions on pushes to `dev`; manual deploy for pilot | Production deploy uses `git pull origin main` on the Droplet |
-| **Domain & TLS** | Domain (TBD), Certbot, Nginx TLS termination | Nginx is **IP-only** for now |
+| **Domain & TLS** | Domain **maple-a1.com**, API host **api.maple-a1.com**, Certbot, Nginx TLS | **Matches** design §6: NS → DigitalOcean DNS, **`A` `api` → Droplet**, HTTPS for `api.maple-a1.com` with Certbot; see [Nginx production structure](#nginx-production-structure-apimaple-a1com). |
 | **Database** | Managed PostgreSQL with **pgvector** for RAG | **Managed PostgreSQL 16 with pgvector configured** |
 
 If you find a conflict between this file and the live server, treat the **live system** as truth and ask Jayden to update this document.
 
 ### Known gaps
 
-- **Domain + Certbot** for public DNS and TLS are still **TBD** relative to the design doc; production front door is **IP-only** Nginx today.
 - **Alembic** migrations are **planned for later in development** (see [Deploy procedure](#deploy-procedure)); the deploy script still lists `alembic upgrade head` for when that work lands.
+
+### Nginx reference config (versioned in git)
+
+A **sanitized** example site config (upstream, `proxy_pass`, forwarding headers) lives at [`docs/nginx/maple-a1.example.conf`](nginx/maple-a1.example.conf). It is not the live Droplet file; copy and adapt on the server, then run `nginx -t` before reload.
+
+### Nginx production structure (`api.maple-a1.com`)
+
+This summarizes the **live** reverse proxy as implemented for [`docs/milestones/milestone-01-tasks.md`](milestones/milestone-01-tasks.md) (Jayden: Nginx + Let’s Encrypt) and [`docs/design-doc.md`](design-doc.md) §6 (Nginx terminates TLS; FastAPI does not).
+
+| Item | Detail |
+|------|--------|
+| **Conffile** | `/etc/nginx/sites-enabled/maple-a1` (symlink from `sites-available`). **Root-owned** — edit with `sudo` (e.g. `sudo nano …`). |
+| **`server_name`** | `api.maple-a1.com` — required so Certbot (`certbot --nginx` or `certbot install --cert-name api.maple-a1.com`) can attach certificates. A catch-all `server_name _` alone does **not** match; the installer will fail until this is set. |
+| **TLS** | `listen 443 ssl;` with `ssl_certificate` / `ssl_certificate_key` under `/etc/letsencrypt/live/api.maple-a1.com/`, plus includes supplied by Certbot (`options-ssl-nginx.conf`, `ssl-dhparams.pem`). |
+| **HTTP → HTTPS** | Separate `server` on port **80**: redirect to HTTPS for `api.maple-a1.com` (Certbot-managed pattern). |
+| **Upstream** | `location /api/` → `proxy_pass http://127.0.0.1:8000;` with `proxy_set_header` for `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`. Only paths under **`/api/`** reach FastAPI (e.g. health: `/api/v1/code-eval/health`). |
+| **Body size** | `client_max_body_size 50M;` for multipart evaluate uploads. |
+| **Firewalls** | **DigitalOcean Cloud Firewall:** inbound **TCP 80**, **443** (and **22** for SSH), per Milestone 1 “secured server environment.” **Droplet `ufw`:** if **active**, must include **`ufw allow 443/tcp`** (and **80/tcp**); otherwise external **`curl https://…`** can time out while `ss` still shows nginx listening on `0.0.0.0:443`. |
+| **Packages** | `certbot`, `python3-certbot-nginx` via `apt` on Ubuntu LTS; renewal uses the **`certbot.timer`** systemd unit when installed by the package. |
+
+### Runbook: api.maple-a1.com (Jayden)
+
+**Goal:** Let’s Encrypt TLS on Nginx for **`api.maple-a1.com`**, proxying to Uvicorn on the Droplet (see [`docs/design-doc.md`](design-doc.md) §6).
+
+1. **DNS (registrar)** — Create **`A`** record: host **`api`** → **Droplet public IPv4** (verify in DigitalOcean; this guide has used `161.35.125.120`—confirm before relying on it). Wait for propagation; check: `dig +short api.maple-a1.com`.
+2. **Firewall** — Inbound **TCP 80** and **443** on the **DigitalOcean Cloud Firewall** (and **22** for SSH). If **`ufw`** is **enabled** on the Droplet, run **`sudo ufw allow 80/tcp`**, **`sudo ufw allow 443/tcp`**, then **`sudo ufw reload`** so traffic reaches Nginx.
+3. **SSH** — `ssh -i ~/.ssh/your-key root@<droplet-ip>` (then `sudo` as needed), per [SSH and server users](#ssh-and-server-users).
+4. **Nginx** — Add or edit a `server` block for **`api.maple-a1.com`** on **port 80** with `location /api/` → `proxy_pass http://127.0.0.1:<APP_PORT>` (match **`APP_PORT`** in `/opt/maple-a1/.env` and `maple-a1.service`) and the proxy headers in [Nginx production structure](#nginx-production-structure-apimaple-a1com). Run `sudo nginx -t && sudo systemctl reload nginx`.
+5. **Certbot** — `sudo certbot --nginx -d api.maple-a1.com` (install `certbot` / `python3-certbot-nginx` if missing). Run `sudo certbot renew --dry-run` to confirm renewal.
+6. **Verify** — From a laptop: `curl -sS -o /dev/null -w "%{http_code}\n" "https://api.maple-a1.com/api/v1/code-eval/health"` → expect **200** (use **GET**, not HEAD).
+7. **Repo / checklist** — Update [Production architecture at a glance](#production-architecture-at-a-glance) and [Design vs current deployment](#design-vs-current-deployment) to state **HTTPS live**, remove or narrow the DNS gap bullet above, and mark the Jayden TLS line **`[x]`** in [`docs/milestones/milestone-01-tasks.md`](milestones/milestone-01-tasks.md).
+8. **CORS / Angular** — On the Droplet, set **`CORS_ORIGINS`** in `/opt/maple-a1/.env` to the **exact HTTPS origin** of the deployed Angular app (the **browser’s** origin, not the API hostname). Production build uses **`apiBaseUrl: 'https://api.maple-a1.com'`** in [`client/src/environments/environment.prod.ts`](../client/src/environments/environment.prod.ts) so the SPA calls the API over HTTPS.
+
+---
+
+## Nginx and TLS (Certbot)
+
+This section is for **Jayden** (or the server administrator) to move from an **IP-only** HTTP front door to a **hostname + HTTPS** setup aligned with [`docs/design-doc.md`](design-doc.md) §6 (Nginx reverse proxy, Let’s Encrypt).
+
+### Prerequisites
+
+1. A **DNS hostname** (A or AAAA) pointing at the Droplet’s public IP (or at a load balancer in front of it, if you add one later).
+2. **Firewall / DigitalOcean Cloud Firewall:** allow **80** and **443** from the Internet for HTTP-01 validation and HTTPS clients; keep **22** for SSH per your security policy.
+3. Know the **Uvicorn listen port** the app uses in production (from `/opt/maple-a1/.env` as `APP_PORT`, and consistent with `maple-a1.service`).
+
+### Install packages (Ubuntu LTS on the Droplet)
+
+```bash
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+### Baseline: align Nginx with the repo example
+
+1. Compare the live site config under `/etc/nginx/sites-available/` with [`docs/nginx/maple-a1.example.conf`](nginx/maple-a1.example.conf).
+2. Ensure `proxy_set_header` directives include at least: `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` (so FastAPI sees HTTPS and client IP correctly).
+3. Test and reload:
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+### Issue a Let’s Encrypt certificate (HTTP-01)
+
+Run on the Droplet (production API host **`api.maple-a1.com`**):
+
+```bash
+sudo certbot --nginx -d api.maple-a1.com
+```
+
+Follow the interactive prompts. Certbot will adjust the Nginx server block to use the new certificate paths under `/etc/letsencrypt/live/`.
+
+If HTTP-01 fails (e.g. port 80 blocked), use Certbot’s **DNS** plugin for your DNS provider instead of `--nginx`, then configure `ssl_certificate` / `ssl_certificate_key` manually and run `nginx -t`.
+
+### Certificate saved but “Could not install certificate” / no HTTPS on 443
+
+**Symptom:** Let’s Encrypt reports **Successfully received certificate**, then **Could not install certificate** — *“Could not automatically find a matching server block for api.maple-a1.com. Set the `server_name` directive…”* — and `curl https://api.maple-a1.com` times out.
+
+**Cause:** Nginx only had a **default** `server` (e.g. `server_name _` on port 80). Certbot’s installer needs a **`server_name`** that **exactly matches** the hostname you requested (`api.maple-a1.com`).
+
+**Fix (on the Droplet):**
+
+1. Edit the active site under `/etc/nginx/sites-available/` (often `default` or `maple-a1`).
+2. Add a **dedicated** port-80 server block (adjust `8000` to match `APP_PORT` / `maple-a1.service`). Use **`location /api/`** to match the production vhost:
+
+   ```nginx
+   server {
+       listen 80;
+       listen [::]:80;
+       server_name api.maple-a1.com;
+
+       client_max_body_size 50M;
+
+       location /api/ {
+           proxy_pass http://127.0.0.1:8000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+
+3. `sudo nginx -t && sudo systemctl reload nginx`
+4. Install the **existing** cert into that vhost:
+
+   ```bash
+   sudo certbot install --cert-name api.maple-a1.com
+   ```
+
+   (If prompted, choose the `api.maple-a1.com` server block.) Alternatively run `sudo certbot --nginx -d api.maple-a1.com` again — it may reuse the cert and complete install now that `server_name` matches.
+
+5. Confirm Nginx listens on 443: `sudo ss -tlnp | grep ':443'`
+6. From your laptop: `curl -sS -o /dev/null -w "%{http_code}\n" "https://api.maple-a1.com/api/v1/code-eval/health"` → **200**.
+
+**Note:** If you still use a **catch-all** `default_server` on port 80, ensure requests with `Host: api.maple-a1.com` hit the new block (name-based vhost order is usually sufficient when `server_name` is explicit).
+
+### After TLS is enabled
+
+1. **Update this document:** change “Nginx (IP-only)” in [Production architecture at a glance](#production-architecture-at-a-glance) to the production hostname and **HTTPS**.
+2. **Milestone checklist:** mark the TLS line complete in [`docs/milestones/milestone-01-tasks.md`](milestones/milestone-01-tasks.md) (Jayden section).
+3. **Coordinate with app owners:** set `CORS_ORIGINS` in production `.env` to the **HTTPS** origin of the deployed Angular app (FastAPI), and update the frontend’s production API base URL if it still points at raw IP/HTTP.
+
+### Verification (run from your laptop)
+
+Replace hostnames if you use something other than **`api.maple-a1.com`**.
+
+```bash
+# DNS
+dig +short api.maple-a1.com
+
+# TLS + API health (after Certbot) — use GET; this endpoint may return 405 on HEAD
+curl -sS -o /dev/null -w "HTTPS health HTTP %{http_code}\n" "https://api.maple-a1.com/api/v1/code-eval/health"
+
+# HTTP → HTTPS redirect (expected after Certbot configures redirect)
+curl -sSI "http://api.maple-a1.com/api/v1/code-eval/health"
+
+# IP-only baseline (before TLS) — documented Droplet in this guide
+curl -sS -o /dev/null -w "IP health HTTP %{http_code}\n" "http://161.35.125.120/api/v1/code-eval/health"
+```
+
+**On the Droplet** (after editing Nginx): `sudo nginx -t` then `sudo systemctl reload nginx`. Check app logs with `journalctl -u maple-a1 -n 50` (as `root`).
+
+**Maintainer spot-check:** `GET` on **`/api/v1/code-eval/health`** returns **200** over **HTTPS** at `api.maple-a1.com` when DNS, Cloud Firewall, **`ufw`**, Nginx, and Certbot are aligned; **`HEAD`** may return **405** for that route (use **GET** for checks).
+
+### Risks and rollback
+
+- Always run **`sudo nginx -t`** before **`systemctl reload nginx`**. Keep a backup of the previous site file (`cp ... ...bak`).
+- If the site breaks after Certbot, restore the backup config, reload Nginx, and revoke or delete the certificate only if you are abandoning that hostname (`certbot delete` — use with care).
 
 ---
 
