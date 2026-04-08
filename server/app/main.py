@@ -27,7 +27,6 @@ from .cache import (
     load_repository_cache_entry,
     save_repository_cache_entry,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import get_required_github_pat, settings
 from .middleware.auth import get_current_user
@@ -432,7 +431,7 @@ async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONR
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
 async def evaluate_submission(
     github_url: str = Form(...),
-    assignment_id: str = Form(...),
+    assignment_id: str | None = Form(default=None),
     rubric: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -504,31 +503,6 @@ async def evaluate_submission(
                 code="NOT_FOUND",
                 message=f"Assignment '{assignment_id}' does not exist.",
             )
-        parsed_assignment_id = parse_assignment_id(assignment_id)
-    except ValueError as exc:
-        raise MapleAPIError(
-            status_code=400,
-            code="VALIDATION_ERROR",
-            message=f"assignment_id is not a valid UUID: {exc}",
-        ) from exc
-
-    try:
-        await validate_assignment_exists(db, parsed_assignment_id)
-    except ValueError as exc:
-        raise MapleAPIError(
-            status_code=404,
-            code="NOT_FOUND",
-            message=str(exc),
-        ) from exc
-
-    try:
-        student_id = uuid.UUID(current_user["sub"])
-    except (KeyError, ValueError) as exc:
-        raise MapleAPIError(
-            status_code=401,
-            code="AUTHENTICATION_ERROR",
-            message="JWT subject claim is missing or not a valid UUID.",
-        ) from exc
 
     try:
         github_pat = get_required_github_pat()
@@ -565,19 +539,11 @@ async def evaluate_submission(
             github_repo_url=str(validated_url),
             commit_hash=cached_entry.commit_hash,
             status="cached",
-        db_submission = await create_submission(
-            db,
-            assignment_id=parsed_assignment_id,
-            student_id=student_id,
-            github_repo_url=github_url,
-            commit_hash=cached_entry.commit_hash,
-            status="Pending",
         )
         return SubmissionResponse(
             success=True,
             data=SubmissionData(
                 submission_id=str(submission.id),
-                submission_id=str(db_submission.id),
                 github_url=github_url,
                 assignment_id=assignment_id,
                 rubric_digest=rubric_fingerprint.digest,
@@ -638,20 +604,12 @@ async def evaluate_submission(
         github_repo_url=str(validated_url),
         commit_hash=commit_hash,
         status="cloned",
-    db_submission = await create_submission(
-        db,
-        assignment_id=parsed_assignment_id,
-        student_id=student_id,
-        github_repo_url=github_url,
-        commit_hash=commit_hash,
-        status="Pending",
     )
 
     return SubmissionResponse(
         success=True,
         data=SubmissionData(
             submission_id=str(submission.id),
-            submission_id=str(db_submission.id),
             github_url=github_url,
             assignment_id=assignment_id,
             rubric_digest=rubric_fingerprint.digest,

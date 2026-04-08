@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import HttpUrl, TypeAdapter
 
-from server.app.main import parse_github_repo_url
+from app.main import parse_github_repo_url
 
 
 class ParseGitHubRepoUrlTests(unittest.TestCase):
