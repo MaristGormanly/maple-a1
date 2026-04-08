@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from server.app.routers.submissions import get_submission
+from app.routers.submissions import get_submission
 
 
 def _payload(response) -> dict:
