@@ -9,7 +9,7 @@ from ..models.submission import Submission
 async def create_submission(
     db: AsyncSession,
     *,
-    assignment_id: uuid.UUID,
+    assignment_id: uuid.UUID | None = None,
     student_id: uuid.UUID,
     github_repo_url: str,
     commit_hash: str | None = None,

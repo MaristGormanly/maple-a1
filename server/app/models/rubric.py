@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, Integer, JSON, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from server.app.models.database import Base
+from .database import Base
 
 
 class Rubric(Base):
