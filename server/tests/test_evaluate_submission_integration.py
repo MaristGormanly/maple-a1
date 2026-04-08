@@ -1,8 +1,9 @@
 import json
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -15,7 +16,12 @@ from app.cache import (
 )
 from app.main import GitHubRepoMetadata, MapleAPIError, app
 from app.middleware.auth import get_current_user
+from app.models.database import get_db
 from app.preprocessing import RepositoryPreprocessingError
+
+MOCK_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
+MOCK_SUBMISSION_ID = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+MOCK_ASSIGNMENT_ID = "11111111-2222-3333-4444-555555555555"
 
 
 TEST_ROOT = Path(__file__).resolve().parent
@@ -24,9 +30,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 class EvaluateSubmissionIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
-        app.dependency_overrides[get_current_user] = lambda: {"sub": "test-user", "role": "user"}
+        app.dependency_overrides[get_current_user] = lambda: {"sub": MOCK_STUDENT_ID, "role": "user"}
+
+        async def _override_get_db():
+            yield AsyncMock()
+
+        app.dependency_overrides[get_db] = _override_get_db
+
+        self._validate_assignment_patcher = patch(
+            "app.main.validate_assignment_exists",
+            new=AsyncMock(),
+        )
+        self._mock_validate_assignment = self._validate_assignment_patcher.start()
 
     def tearDown(self) -> None:
+        self._validate_assignment_patcher.stop()
         app.dependency_overrides.clear()
 
     def _post_evaluate(
@@ -60,7 +78,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             response = self._post_evaluate(
                 client,
                 github_url="https://example.com/student/example-assignment",
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric=self._sample_rubric(),
             )
 
@@ -87,7 +105,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             response = self._post_evaluate(
                 client,
                 github_url="https://github.com/student/example-assignment",
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric=self._sample_rubric(),
             )
 
@@ -118,7 +136,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             response = self._post_evaluate(
                 client,
                 github_url="https://github.com/student/example-assignment",
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric=self._sample_rubric(),
             )
 
@@ -152,7 +170,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             response = self._post_evaluate(
                 client,
                 github_url="https://github.com/student/example-assignment",
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric=self._sample_rubric(),
             )
 
@@ -175,7 +193,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             response = self._post_evaluate(
                 client,
                 github_url="https://github.com/student/example-assignment",
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric={},
             )
 
@@ -230,12 +248,15 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             ), patch(
                 "app.main.clone_repository",
                 new=AsyncMock(side_effect=clone_side_effect),
+            ), patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
             ):
                 client = TestClient(app)
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -246,7 +267,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 expected_status="cloned",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=expected_local_path,
-                expected_assignment_id="asgn_abc123",
+                expected_assignment_id=MOCK_ASSIGNMENT_ID,
                 expected_rubric=self._sample_rubric(),
             )
             self.assertEqual(payload["data"]["status"], "cloned")
@@ -280,7 +301,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             cache_key = build_repository_cache_key("abc123", rubric_fingerprint.digest)
             cache_entry = create_repository_cache_entry(
                 cache_key=cache_key,
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric_fingerprint=rubric_fingerprint,
                 full_repo_name="student/example-assignment",
                 local_repo_path=repo_path,
@@ -309,12 +330,15 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 new=AsyncMock(),
             ) as clone_mock, patch(
                 "app.main.preprocess_repository",
-            ) as preprocess_mock:
+            ) as preprocess_mock, patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ):
                 client = TestClient(app)
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -325,7 +349,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 expected_status="cached",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=expected_local_path,
-                expected_assignment_id="asgn_abc123",
+                expected_assignment_id=MOCK_ASSIGNMENT_ID,
                 expected_rubric=self._sample_rubric(),
             )
             clone_mock.assert_not_called()
@@ -344,7 +368,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             stale_cache_key = build_repository_cache_key("abc123", rubric_fingerprint.digest)
             stale_cache_entry = create_repository_cache_entry(
                 cache_key=stale_cache_key,
-                assignment_id="asgn_abc123",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric_fingerprint=rubric_fingerprint,
                 full_repo_name="student/example-assignment",
                 local_repo_path=stale_repo_path,
@@ -378,12 +402,15 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             ), patch(
                 "app.main.clone_repository",
                 new=AsyncMock(side_effect=clone_side_effect),
-            ) as clone_mock:
+            ) as clone_mock, patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ):
                 client = TestClient(app)
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -394,7 +421,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 expected_status="cloned",
                 expected_commit_hash="def456",
                 expected_local_repo_path=str(refreshed_repo_path.relative_to(PROJECT_ROOT)),
-                expected_assignment_id="asgn_abc123",
+                expected_assignment_id=MOCK_ASSIGNMENT_ID,
                 expected_rubric=self._sample_rubric(),
             )
             clone_mock.assert_awaited_once()
@@ -434,7 +461,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             stale_cache_key = build_repository_cache_key("abc123", stale_fingerprint.digest)
             stale_cache_entry = create_repository_cache_entry(
                 cache_key=stale_cache_key,
-                assignment_id="asgn_coursework",
+                assignment_id=MOCK_ASSIGNMENT_ID,
                 rubric_fingerprint=stale_fingerprint,
                 full_repo_name="student/example-assignment",
                 local_repo_path=stale_repo_path,
@@ -468,12 +495,15 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             ), patch(
                 "app.main.clone_repository",
                 new=AsyncMock(side_effect=clone_side_effect),
-            ) as clone_mock:
+            ) as clone_mock, patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ):
                 client = TestClient(app)
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_coursework",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=refreshed_rubric,
                 )
 
@@ -484,7 +514,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 expected_status="cloned",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=str(refreshed_repo_path.relative_to(PROJECT_ROOT)),
-                expected_assignment_id="asgn_coursework",
+                expected_assignment_id=MOCK_ASSIGNMENT_ID,
                 expected_rubric=refreshed_rubric,
             )
             clone_mock.assert_awaited_once()
@@ -498,7 +528,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 refreshed_cache_key.value,
             )
             self.assertIsNotNone(refreshed_entry)
-            self.assertEqual(refreshed_entry.assignment_id, "asgn_coursework")
+            self.assertEqual(refreshed_entry.assignment_id, MOCK_ASSIGNMENT_ID)
 
     def test_evaluate_submission_returns_cache_error_for_unreadable_cache_metadata(self) -> None:
         with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
@@ -532,7 +562,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -583,7 +613,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -633,7 +663,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
                 response = self._post_evaluate(
                     client,
                     github_url="https://github.com/student/example-assignment",
-                    assignment_id="asgn_abc123",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
                     rubric=self._sample_rubric(),
                 )
 
@@ -645,6 +675,81 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             expected_message="Repository clone failed.",
         )
         preprocess_mock.assert_not_called()
+
+    def test_evaluate_submission_returns_not_found_for_nonexistent_assignment(self) -> None:
+        nonexistent_id = "99999999-0000-0000-0000-000000000099"
+        self._validate_assignment_patcher.stop()
+        with patch(
+            "app.main.validate_assignment_exists",
+            new=AsyncMock(side_effect=ValueError(f"Assignment '{nonexistent_id}' does not exist")),
+        ):
+            client = TestClient(app)
+            response = self._post_evaluate(
+                client,
+                github_url="https://github.com/student/example-assignment",
+                assignment_id=nonexistent_id,
+                rubric=self._sample_rubric(),
+            )
+        self._mock_validate_assignment = self._validate_assignment_patcher.start()
+
+        self.assertEqual(response.status_code, 404)
+        payload = response.json()
+        self.assert_error_response_contract(
+            payload=payload,
+            expected_code="NOT_FOUND",
+            expected_message=f"Assignment '{nonexistent_id}' does not exist.",
+        )
+
+    def test_evaluate_submission_succeeds_with_existing_assignment(self) -> None:
+        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+            temp_root = Path(tmp_dir)
+            staging_path = temp_root / "staging-repo"
+            repo_path = temp_root / "cached-repo"
+            cache_index_path = temp_root / "repository-cache-index.json"
+
+            def clone_side_effect(_clone_url: str, destination_path: Path, _github_pat: str) -> str:
+                self._write_file(destination_path / "src" / "main.py", "print('hello')\n")
+                return "abc123"
+
+            with patch("app.main.get_required_github_pat", return_value="test-pat"), patch(
+                "app.main.validate_github_repo_access",
+                new=AsyncMock(
+                    return_value=GitHubRepoMetadata(
+                        full_name="student/example-assignment",
+                        default_branch="main",
+                        visibility="private",
+                        clone_url="https://github.com/student/example-assignment.git",
+                    )
+                ),
+            ), patch(
+                "app.main.resolve_repository_head_commit_hash",
+                new=AsyncMock(return_value="abc123"),
+            ), patch("app.main.create_staging_clone_path", return_value=staging_path), patch(
+                "app.main.determine_raw_clone_path",
+                return_value=repo_path,
+            ), patch(
+                "app.main.CACHE_INDEX_PATH",
+                cache_index_path,
+            ), patch(
+                "app.main.clone_repository",
+                new=AsyncMock(side_effect=clone_side_effect),
+            ), patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ):
+                client = TestClient(app)
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
+                    rubric=self._sample_rubric(),
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["success"])
+            self.assertEqual(payload["data"]["assignment_id"], MOCK_ASSIGNMENT_ID)
+            self._mock_validate_assignment.assert_called()
 
     def assert_success_response_contract(
         self,
@@ -661,7 +766,10 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
         self.assertIsNone(payload["error"])
         self.assertIn("data", payload)
         self.assertIn("metadata", payload)
-        self.assertTrue(payload["data"]["submission_id"].startswith("sub_"))
+        try:
+            uuid.UUID(payload["data"]["submission_id"])
+        except ValueError:
+            self.fail(f"submission_id '{payload['data']['submission_id']}' is not a valid UUID")
         self.assertEqual(payload["data"]["github_url"], "https://github.com/student/example-assignment")
         self.assertEqual(payload["data"]["assignment_id"], expected_assignment_id)
         self.assertEqual(payload["data"]["rubric_digest"], expected_rubric_digest)
@@ -692,6 +800,11 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
     def _write_file(self, path: Path, contents: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(contents, encoding="utf-8")
+
+    def _mock_create_submission(self) -> AsyncMock:
+        mock_sub = MagicMock()
+        mock_sub.id = MOCK_SUBMISSION_ID
+        return AsyncMock(return_value=mock_sub)
 
     def _sample_rubric(self) -> dict[str, object]:
         return {

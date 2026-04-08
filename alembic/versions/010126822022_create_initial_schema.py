@@ -59,7 +59,7 @@ def upgrade() -> None:
     op.create_table(
         "submissions",
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("assignment_id", sa.Uuid(), nullable=False),
+        sa.Column("assignment_id", sa.Uuid(), nullable=True),
         sa.Column("student_id", sa.Uuid(), nullable=False),
         sa.Column("github_repo_url", sa.String(), nullable=False),
         sa.Column("commit_hash", sa.String(), nullable=True),

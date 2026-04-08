@@ -9,7 +9,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 from urllib.parse import quote
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
@@ -27,6 +27,8 @@ from .cache import (
     load_repository_cache_entry,
     save_repository_cache_entry,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from .config import get_required_github_pat, settings
 from .middleware.auth import get_current_user
 from .models.database import get_db
@@ -91,12 +93,12 @@ def parse_github_repo_url(url: HttpUrl) -> tuple[str, str]:
         raise ValueError("github_url must point to github.com")
 
     path_parts = [part for part in url.path.split("/") if part]
-    if len(path_parts) != 2:
+    if len(path_parts) < 2:
         raise ValueError(
             "github_url must be a repository URL in the form https://github.com/<owner>/<repo>"
         )
 
-    owner, repo_name = path_parts
+    owner, repo_name = path_parts[0], path_parts[1]
     if repo_name.endswith(".git"):
         repo_name = repo_name[:-4]
 
@@ -476,6 +478,32 @@ async def evaluate_submission(
         ) from exc
 
     try:
+        student_id = UUID(current_user["sub"])
+    except (ValueError, KeyError):
+        raise MapleAPIError(
+            status_code=401,
+            code="AUTH_ERROR",
+            message="Invalid user identity in token.",
+        )
+
+    parsed_assignment_id: UUID | None = None
+    if assignment_id:
+        try:
+            parsed_assignment_id = parse_assignment_id(assignment_id)
+        except ValueError:
+            raise MapleAPIError(
+                status_code=400,
+                code="VALIDATION_ERROR",
+                message="assignment_id must be a valid UUID.",
+            )
+        try:
+            await validate_assignment_exists(db, parsed_assignment_id)
+        except ValueError:
+            raise MapleAPIError(
+                status_code=404,
+                code="NOT_FOUND",
+                message=f"Assignment '{assignment_id}' does not exist.",
+            )
         parsed_assignment_id = parse_assignment_id(assignment_id)
     except ValueError as exc:
         raise MapleAPIError(
@@ -530,6 +558,13 @@ async def evaluate_submission(
         ) from exc
 
     if cached_entry is not None:
+        submission = await create_submission(
+            db,
+            assignment_id=parsed_assignment_id,
+            student_id=student_id,
+            github_repo_url=str(validated_url),
+            commit_hash=cached_entry.commit_hash,
+            status="cached",
         db_submission = await create_submission(
             db,
             assignment_id=parsed_assignment_id,
@@ -541,6 +576,7 @@ async def evaluate_submission(
         return SubmissionResponse(
             success=True,
             data=SubmissionData(
+                submission_id=str(submission.id),
                 submission_id=str(db_submission.id),
                 github_url=github_url,
                 assignment_id=assignment_id,
@@ -595,6 +631,13 @@ async def evaluate_submission(
             message=str(exc),
         ) from exc
 
+    submission = await create_submission(
+        db,
+        assignment_id=parsed_assignment_id,
+        student_id=student_id,
+        github_repo_url=str(validated_url),
+        commit_hash=commit_hash,
+        status="cloned",
     db_submission = await create_submission(
         db,
         assignment_id=parsed_assignment_id,
@@ -607,6 +650,7 @@ async def evaluate_submission(
     return SubmissionResponse(
         success=True,
         data=SubmissionData(
+            submission_id=str(submission.id),
             submission_id=str(db_submission.id),
             github_url=github_url,
             assignment_id=assignment_id,
