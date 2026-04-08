@@ -39,6 +39,9 @@ testem.log
 /typings
 __screenshots__/
 
+# Local dev token override — never commit real JWTs
+src/environments/environment.development.ts
+
 # System files
 .DS_Store
 Thumbs.db

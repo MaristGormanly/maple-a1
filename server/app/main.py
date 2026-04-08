@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -16,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .cache import (
     RepositoryCacheError,
@@ -84,6 +86,9 @@ def create_staging_clone_path(full_repo_name: str) -> Path:
 
 
 def parse_github_repo_url(url: HttpUrl) -> tuple[str, str]:
+    if url.scheme != "https":
+        raise ValueError("github_url must use https://")
+
     if url.host not in {"github.com", "www.github.com"}:
         raise ValueError("github_url must point to github.com")
 
@@ -427,7 +432,7 @@ async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONR
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
 async def evaluate_submission(
     github_url: str = Form(...),
-    assignment_id: str | None = Form(default=None),
+    assignment_id: str = Form(...),
     rubric: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -499,6 +504,31 @@ async def evaluate_submission(
                 code="NOT_FOUND",
                 message=f"Assignment '{assignment_id}' does not exist.",
             )
+        parsed_assignment_id = parse_assignment_id(assignment_id)
+    except ValueError as exc:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message=f"assignment_id is not a valid UUID: {exc}",
+        ) from exc
+
+    try:
+        await validate_assignment_exists(db, parsed_assignment_id)
+    except ValueError as exc:
+        raise MapleAPIError(
+            status_code=404,
+            code="NOT_FOUND",
+            message=str(exc),
+        ) from exc
+
+    try:
+        student_id = uuid.UUID(current_user["sub"])
+    except (KeyError, ValueError) as exc:
+        raise MapleAPIError(
+            status_code=401,
+            code="AUTHENTICATION_ERROR",
+            message="JWT subject claim is missing or not a valid UUID.",
+        ) from exc
 
     try:
         github_pat = get_required_github_pat()
@@ -535,11 +565,19 @@ async def evaluate_submission(
             github_repo_url=str(validated_url),
             commit_hash=cached_entry.commit_hash,
             status="cached",
+        db_submission = await create_submission(
+            db,
+            assignment_id=parsed_assignment_id,
+            student_id=student_id,
+            github_repo_url=github_url,
+            commit_hash=cached_entry.commit_hash,
+            status="Pending",
         )
         return SubmissionResponse(
             success=True,
             data=SubmissionData(
                 submission_id=str(submission.id),
+                submission_id=str(db_submission.id),
                 github_url=github_url,
                 assignment_id=assignment_id,
                 rubric_digest=rubric_fingerprint.digest,
@@ -600,12 +638,20 @@ async def evaluate_submission(
         github_repo_url=str(validated_url),
         commit_hash=commit_hash,
         status="cloned",
+    db_submission = await create_submission(
+        db,
+        assignment_id=parsed_assignment_id,
+        student_id=student_id,
+        github_repo_url=github_url,
+        commit_hash=commit_hash,
+        status="Pending",
     )
 
     return SubmissionResponse(
         success=True,
         data=SubmissionData(
             submission_id=str(submission.id),
+            submission_id=str(db_submission.id),
             github_url=github_url,
             assignment_id=assignment_id,
             rubric_digest=rubric_fingerprint.digest,

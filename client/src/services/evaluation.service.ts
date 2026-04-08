@@ -15,14 +15,12 @@ export class EvaluationService {
   // POST /api/v1/code-eval/auth/login is implemented (Milestone 2).
   submitEvaluation(
     githubUrl: string,
-    assignmentId: string | null,
+    assignmentId: string,
     rubricFile: File
   ): Observable<SubmissionResponse> {
     const body = new FormData();
     body.append('github_url', githubUrl);
-    if (assignmentId) {
-      body.append('assignment_id', assignmentId);
-    }
+    body.append('assignment_id', assignmentId);
     body.append('rubric', rubricFile);
 
     // Do not set Content-Type manually — the browser sets multipart/form-data

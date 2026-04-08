@@ -16,7 +16,7 @@ export class SubmitPageComponent {
       Validators.required,
       Validators.pattern(/^https:\/\/(www\.)?github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/?$/),
     ]),
-    assignmentId: new FormControl(''),
+    assignmentId: new FormControl('', [Validators.required]),
   });
 
   selectedFile: File | null = null;
@@ -48,7 +48,7 @@ export class SubmitPageComponent {
     this.errorMessage = null;
 
     const githubUrl = this.form.value.githubUrl!;
-    const assignmentId = this.form.value.assignmentId || null;
+    const assignmentId = this.form.value.assignmentId!;
 
     this.evaluationService
       .submitEvaluation(githubUrl, assignmentId, this.selectedFile)

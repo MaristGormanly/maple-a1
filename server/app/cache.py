@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
+import os
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -72,33 +75,47 @@ def build_repository_cache_key(commit_hash: str, rubric_digest: str) -> Reposito
     )
 
 
+@contextlib.contextmanager
+def _exclusive_lock(index_path: Path):
+    lock_path = index_path.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as _lf:
+        fcntl.flock(_lf, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(_lf, fcntl.LOCK_UN)
+
+
 def load_repository_cache_entry(
     index_path: Path,
     project_root: Path,
     cache_key: str,
 ) -> RepositoryCacheEntry | None:
-    index = _load_cache_index(index_path)
-    payload = index["entries"].get(cache_key)
-    if payload is None:
-        return None
+    with _exclusive_lock(index_path):
+        index = _load_cache_index(index_path)
+        payload = index["entries"].get(cache_key)
+        if payload is None:
+            return None
 
-    entry = RepositoryCacheEntry(**payload)
-    cached_repo_path = project_root / entry.local_repo_path
-    if not cached_repo_path.exists() or not cached_repo_path.is_dir():
-        del index["entries"][cache_key]
+        entry = RepositoryCacheEntry(**payload)
+        cached_repo_path = project_root / entry.local_repo_path
+        if not cached_repo_path.exists() or not cached_repo_path.is_dir():
+            del index["entries"][cache_key]
+            _write_cache_index(index_path, index)
+            return None
+
+        refreshed_payload = {**payload, "last_used_at": _utcnow_iso()}
+        index["entries"][cache_key] = refreshed_payload
         _write_cache_index(index_path, index)
-        return None
-
-    refreshed_payload = {**payload, "last_used_at": _utcnow_iso()}
-    index["entries"][cache_key] = refreshed_payload
-    _write_cache_index(index_path, index)
-    return RepositoryCacheEntry(**refreshed_payload)
+        return RepositoryCacheEntry(**refreshed_payload)
 
 
 def save_repository_cache_entry(index_path: Path, entry: RepositoryCacheEntry) -> None:
-    index = _load_cache_index(index_path)
-    index["entries"][entry.cache_key] = asdict(entry)
-    _write_cache_index(index_path, index)
+    with _exclusive_lock(index_path):
+        index = _load_cache_index(index_path)
+        index["entries"][entry.cache_key] = asdict(entry)
+        _write_cache_index(index_path, index)
 
 
 def create_repository_cache_entry(
@@ -142,10 +159,12 @@ def _load_cache_index(index_path: Path) -> dict[str, dict[str, object]]:
 def _write_cache_index(index_path: Path, payload: dict[str, dict[str, object]]) -> None:
     try:
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        index_path.write_text(
+        tmp_path = index_path.with_suffix(".tmp")
+        tmp_path.write_text(
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        os.replace(tmp_path, index_path)
     except OSError as exc:
         raise RepositoryCacheError("Repository cache index could not be written.") from exc
 
