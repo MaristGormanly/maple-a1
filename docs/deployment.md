@@ -212,6 +212,81 @@ curl -sS -o /dev/null -w "IP health HTTP %{http_code}\n" "http://161.35.125.120/
 
 ---
 
+## Docker socket access (`/var/run/docker.sock`)
+
+The FastAPI backend uses the Docker SDK to spin up ephemeral sandbox containers. To do this it needs access to the Docker daemon socket on the Droplet. The `maple` user (which runs `maple-a1.service`) must be a member of the `docker` group on the host. *(Source: `docs/design-doc.md` §6 "The FastAPI backend will have direct access to the Docker Daemon via the native UNIX socket `/var/run/docker.sock`")*
+
+### Verify Docker is installed (as `root`)
+
+SSH into the Droplet and confirm the Docker daemon is present and running:
+
+```bash
+docker version          # prints client + server version if daemon is up
+docker info             # prints system-wide info including storage driver
+systemctl is-active docker  # should print "active"
+```
+
+If `docker` is not found, install it:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+```
+
+### Check socket permissions
+
+The socket must be group-readable by the `docker` group:
+
+```bash
+ls -la /var/run/docker.sock
+# Expected: srw-rw---- 1 root docker ... /var/run/docker.sock
+```
+
+### Check `maple` user group membership
+
+```bash
+groups maple
+# Expected output includes "docker"
+```
+
+### Grant `maple` access to the socket
+
+If `docker` is not in the output above, add the user to the group:
+
+```bash
+sudo usermod -aG docker maple
+```
+
+Then restart the service so the process picks up the new group membership (a re-login alone is not sufficient for a running systemd service):
+
+```bash
+systemctl restart maple-a1
+```
+
+### Verify the fix
+
+Test that the `maple` user can communicate with the daemon directly:
+
+```bash
+sudo -u maple docker run --rm hello-world
+```
+
+Expected output ends with: `Hello from Docker!`. Any `permission denied` error on `/var/run/docker.sock` means the group assignment did not take effect — confirm with `groups maple` and restart the service again.
+
+> **Security note:** Membership in the `docker` group is effectively root-equivalent on the host because Docker containers can mount the host filesystem. This is acceptable for the `maple` application user under the MAPLE threat model (see `docs/design-doc.md` §7 "Risk 2: Docker Sandbox Misconfiguration"), but **do not** add interactive developer accounts or CI runners to the `docker` group on the production Droplet without explicit approval.
+
+### Verification checklist
+
+| Check | Command | Expected result |
+|-------|---------|-----------------|
+| Docker daemon running | `systemctl is-active docker` | `active` |
+| Socket group | `ls -la /var/run/docker.sock` | group `docker`, mode `srw-rw----` |
+| `maple` in docker group | `groups maple` | output includes `docker` |
+| End-to-end container test | `sudo -u maple docker run --rm hello-world` | `Hello from Docker!` |
+
+---
+
 ## Access and accounts
 
 You need access to the DigitalOcean dashboard to see the Droplet, managed database, firewalls, and related resources.
@@ -589,5 +664,6 @@ Repeat for **`root`** and, if applicable, **`maple`**, depending on who should b
 
 | Version | Date | Summary |
 |---------|------|---------|
+| 1.1.0 | 2026-04-08 | Added **Docker socket access** section: verify install, socket permissions, `maple` group membership, fix (`usermod -aG docker maple`), end-to-end test, and security note. |
 | 1.0.1 | 2026-04-01 | Removed **Open questions for Jayden** section. |
 | 1.0.0 | 2026-04-01 | Refactored guide structure; design vs production; local/schema/Jayden sections; pgvector and 4 GB/2 vCPU; App Platform not for Angular; Alembic deferred; document version table added. |

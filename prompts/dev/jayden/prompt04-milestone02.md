@@ -101,3 +101,33 @@ You finish Milestone 2’s runtime layer when those six behaviors are true, test
 
 # Implementation Iterative Summaries
 
+---
+
+### 2026-04-08 — Task 1: Socket access and documentation
+
+**Task:** Verify Docker is installed and the `maple-a1.service` process user has access to `/var/run/docker.sock` on the DigitalOcean Droplet; document the socket permission setup in `docs/deployment.md`.
+
+**What shipped:**
+- Added new section **"Docker socket access (`/var/run/docker.sock`)"** to `docs/deployment.md` (between the Nginx section and the Access/accounts section), covering:
+  - How to verify Docker is installed and the daemon is running (`docker version`, `docker info`, `systemctl is-active docker`)
+  - How to inspect socket permissions (`ls -la /var/run/docker.sock`)
+  - How to check `maple` user group membership (`groups maple`)
+  - The fix: `sudo usermod -aG docker maple` + `systemctl restart maple-a1`
+  - End-to-end test as the `maple` user: `sudo -u maple docker run --rm hello-world`
+  - Security note: `docker` group is root-equivalent; do not add developer accounts without approval; cites `docs/design-doc.md` §7 Risk 2
+  - Verification checklist table summarizing all four checks
+- Bumped `docs/deployment.md` version table to **1.1.0** (2026-04-08)
+
+**Verification:** Documentation review — all commands are reproducible on the Droplet as `root`; no code changes required for this task. End-to-end confirmation requires SSH access to the live Droplet.
+
+**Subagent verdict: spec-compliant.** All requirements satisfied:
+- ✅ Docker install verification documented
+- ✅ Socket permission check documented
+- ✅ `maple` user group membership check and fix documented
+- ✅ End-to-end container test (`docker run --rm hello-world`) documented
+- ✅ `docs/deployment.md` updated with repeatable procedure
+- ✅ Design-doc §6 and §7 citations present
+- ✅ Version table updated
+
+No gaps. Subagent noted one beneficial improvement over the spec: correctly prescribes `systemctl restart maple-a1` rather than just "re-login", which would not be sufficient for a running systemd service.
+

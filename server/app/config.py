@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # private student repositories. Must be present in the environment at startup.
     GITHUB_PAT: str
     
+    # --- Docker Configuration ---
+    # The Docker daemon socket URL. Default is the standard Linux UNIX socket.
+    DOCKER_SOCKET_URL: str = "unix:///var/run/docker.sock"
+    # Fallback image when no language-specific image is specified.
+    DOCKER_DEFAULT_IMAGE: str = "python:3.12-slim"
+    # Default timeout (seconds) to wait for a container to finish before giving up.
+    DOCKER_CONTAINER_TIMEOUT: int = 60
+
     # --- CORS (Cross-Origin Resource Sharing) ---
     # Defines which frontend domains are allowed to make requests to this backend API.
     # Can be a single string (comma-separated) or a list of strings.
