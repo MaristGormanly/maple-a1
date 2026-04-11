@@ -112,3 +112,89 @@ class GetSubmissionAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         payload = _payload(response)
         self.assertTrue(payload["success"])
 
+    async def test_submission_without_evaluation_has_no_evaluation_key(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.evaluation_result = None
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertNotIn("evaluation", payload["data"])
+
+    async def test_submission_with_evaluation_includes_score_and_null_feedback(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.evaluation_result = SimpleNamespace(
+            deterministic_score=85.0,
+            ai_feedback_json=None,
+            metadata_json={
+                "language": {"language": "python", "version": "3.12", "source": "pyproject.toml"},
+                "test_summary": {"framework": "pytest", "passed": 17, "failed": 3, "errors": 0, "skipped": 0},
+            },
+        )
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertIn("evaluation", payload["data"])
+        self.assertEqual(payload["data"]["evaluation"]["deterministic_score"], 85.0)
+        self.assertIsNone(payload["data"]["evaluation"]["ai_feedback"])
+        self.assertEqual(
+            payload["data"]["evaluation"]["metadata"]["language"]["language"],
+            "python",
+        )
+        self.assertEqual(payload["data"]["evaluation"]["metadata"]["test_summary"]["passed"], 17)
+
+    async def test_submission_status_reflects_testing(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.status = "Testing"
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["status"], "Testing")
+
+    async def test_submission_status_reflects_completed(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.status = "Completed"
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["status"], "Completed")
+

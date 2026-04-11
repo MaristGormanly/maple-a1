@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..models.evaluation_result import EvaluationResult
 from ..models.submission import Submission
 
 
@@ -43,6 +44,26 @@ async def get_submission_by_id(
         select(Submission).where(Submission.id == submission_id)
     )
     return result.scalar_one_or_none()
+
+
+async def persist_evaluation_result(
+    db: AsyncSession,
+    *,
+    submission_id: uuid.UUID,
+    deterministic_score: float | None,
+    metadata_json: dict | None = None,
+) -> EvaluationResult:
+    row = EvaluationResult(
+        id=uuid.uuid4(),
+        submission_id=submission_id,
+        deterministic_score=deterministic_score,
+        ai_feedback_json=None,
+        metadata_json=metadata_json,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
 
 
 async def update_submission_status(

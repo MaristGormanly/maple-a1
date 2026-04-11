@@ -81,9 +81,16 @@ async def get_submission(
     }
 
     if submission.evaluation_result:
-        data["evaluation"] = {
+        eval_data: dict = {
             "deterministic_score": submission.evaluation_result.deterministic_score,
             "ai_feedback": submission.evaluation_result.ai_feedback_json,
         }
+        meta = submission.evaluation_result.metadata_json
+        if meta and isinstance(meta, dict):
+            eval_data["metadata"] = {
+                "language": meta.get("language"),
+                "test_summary": meta.get("test_summary"),
+            }
+        data["evaluation"] = eval_data
 
     return success_response(data)

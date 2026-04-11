@@ -35,6 +35,7 @@ from .preprocessing import RepositoryPreprocessingError, preprocess_repository
 from .routers import assignments, auth, rubrics, submissions
 from .services.assignments import parse_assignment_id, validate_assignment_exists
 from .services.llm import redact
+from .services.pipeline import run_pipeline
 from .services.submissions import create_submission
 from .utils.responses import error_response, success_response
 
@@ -538,8 +539,22 @@ async def evaluate_submission(
             student_id=student_id,
             github_repo_url=str(validated_url),
             commit_hash=cached_entry.commit_hash,
-            status="cached",
+            status="Pending" if parsed_assignment_id is not None else "cached",
         )
+        if parsed_assignment_id is not None:
+            student_abs = str(
+                (PROJECT_ROOT / Path(cached_entry.local_repo_path)).resolve()
+            )
+            asyncio.create_task(
+                run_pipeline(
+                    submission.id,
+                    parsed_assignment_id,
+                    student_abs,
+                    rubric_content,
+                    github_pat,
+                )
+            )
+        response_status = "Pending" if parsed_assignment_id is not None else "cached"
         return SubmissionResponse(
             success=True,
             data=SubmissionData(
@@ -547,7 +562,7 @@ async def evaluate_submission(
                 github_url=github_url,
                 assignment_id=assignment_id,
                 rubric_digest=rubric_fingerprint.digest,
-                status="cached",
+                status=response_status,
                 local_repo_path=cached_entry.local_repo_path,
                 commit_hash=cached_entry.commit_hash,
             ),
@@ -603,9 +618,20 @@ async def evaluate_submission(
         student_id=student_id,
         github_repo_url=str(validated_url),
         commit_hash=commit_hash,
-        status="cloned",
+        status="Pending" if parsed_assignment_id is not None else "cloned",
     )
+    if parsed_assignment_id is not None:
+        asyncio.create_task(
+            run_pipeline(
+                submission.id,
+                parsed_assignment_id,
+                str(final_repo_path.resolve()),
+                rubric_content,
+                github_pat,
+            )
+        )
 
+    response_status = "Pending" if parsed_assignment_id is not None else "cloned"
     return SubmissionResponse(
         success=True,
         data=SubmissionData(
@@ -613,7 +639,7 @@ async def evaluate_submission(
             github_url=github_url,
             assignment_id=assignment_id,
             rubric_digest=rubric_fingerprint.digest,
-            status="cloned",
+            status=response_status,
             local_repo_path=str(final_repo_path.relative_to(PROJECT_ROOT)),
             commit_hash=commit_hash,
         ),
