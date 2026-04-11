@@ -147,7 +147,7 @@ The `submission_id` in the response is a **UUID backed by the database** (not ep
 }
 ```
 
-`status` is either `"cloned"` (fresh clone) or `"cached"` (cache hit).
+`status` is `"cloned"` (fresh clone), `"cached"` (cache hit), or `"Pending"` when `assignment_id` is present and the async evaluation pipeline has been dispatched.
 `assignment_id` is `null` when omitted from the request.
 
 **Errors:**
@@ -394,7 +394,11 @@ When an `EvaluationResult` is associated, the response includes an `evaluation` 
     "created_at": "2026-03-28T12:00:00+00:00",
     "evaluation": {
       "deterministic_score": 85,
-      "ai_feedback": { "summary": "Good work overall..." }
+      "ai_feedback": { "summary": "Good work overall..." },
+      "metadata": {
+        "language": { "language": "python", "version": "3.12", "source": "pyproject.toml", "override_applied": false },
+        "test_summary": { "framework": "pytest", "passed": 8, "failed": 2, "errors": 0, "skipped": 0 }
+      }
     }
   },
   "error": null,
