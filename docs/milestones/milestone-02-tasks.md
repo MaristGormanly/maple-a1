@@ -12,9 +12,9 @@
 
 **Tasks:**
 
-- [ ] Verify Docker is installed and the `maple-a1.service` process user has access to `/var/run/docker.sock` on the DigitalOcean Droplet; document the socket permission setup in `docs/deployment.md`. — *`docs/design-doc.md` §6 "The FastAPI backend will have direct access to the Docker Daemon via the native UNIX socket `/var/run/docker.sock`"*; also §8 "Implement Docker SDK integration: spin up ephemeral sibling containers via `/var/run/docker.sock`"*
+- [X] Verify Docker is installed and the `maple-a1.service` process user has access to `/var/run/docker.sock` on the DigitalOcean Droplet; document the socket permission setup in `docs/deployment.md`. — *`docs/design-doc.md` §6 "The FastAPI backend will have direct access to the Docker Daemon via the native UNIX socket `/var/run/docker.sock`"*; also §8 "Implement Docker SDK integration: spin up ephemeral sibling containers via `/var/run/docker.sock`"*
 
-- [ ] Integrate Docker SDK: spin up ephemeral sibling containers via the host UNIX socket `/var/run/docker.sock` (no Docker-in-Docker). — *`docs/design-doc.md` §8 "Implement Docker SDK integration: spin up ephemeral sibling containers via `/var/run/docker.sock`"*
+- [X] Integrate Docker SDK: spin up ephemeral sibling containers via the host UNIX socket `/var/run/docker.sock` (no Docker-in-Docker). — *`docs/design-doc.md` §8 "Implement Docker SDK integration: spin up ephemeral sibling containers via `/var/run/docker.sock`"*
 
 - [ ] Define language-specific base images for the sandbox: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest. — *`docs/design-doc.md` §8 "Define language-specific base images: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest"*
   > *Depends on: Docker socket task above (images are pulled/built against the live daemon).*
