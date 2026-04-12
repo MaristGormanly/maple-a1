@@ -43,7 +43,14 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
         )
         self._mock_validate_assignment = self._validate_assignment_patcher.start()
 
+        self._run_pipeline_patcher = patch(
+            "app.main.run_pipeline",
+            new=AsyncMock(),
+        )
+        self._run_pipeline_patcher.start()
+
     def tearDown(self) -> None:
+        self._run_pipeline_patcher.stop()
         self._validate_assignment_patcher.stop()
         app.dependency_overrides.clear()
 
@@ -264,13 +271,13 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             payload = response.json()
             self.assert_success_response_contract(
                 payload=payload,
-                expected_status="cloned",
+                expected_status="Pending",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=expected_local_path,
                 expected_assignment_id=MOCK_ASSIGNMENT_ID,
                 expected_rubric=self._sample_rubric(),
             )
-            self.assertEqual(payload["data"]["status"], "cloned")
+            self.assertEqual(payload["data"]["status"], "Pending")
             self.assertEqual(payload["data"]["commit_hash"], "abc123")
             self.assertEqual(payload["data"]["local_repo_path"], expected_local_path)
             self.assertFalse((repo_path / ".git").exists())
@@ -346,7 +353,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             payload = response.json()
             self.assert_success_response_contract(
                 payload=payload,
-                expected_status="cached",
+                expected_status="Pending",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=expected_local_path,
                 expected_assignment_id=MOCK_ASSIGNMENT_ID,
@@ -418,7 +425,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             payload = response.json()
             self.assert_success_response_contract(
                 payload=payload,
-                expected_status="cloned",
+                expected_status="Pending",
                 expected_commit_hash="def456",
                 expected_local_repo_path=str(refreshed_repo_path.relative_to(PROJECT_ROOT)),
                 expected_assignment_id=MOCK_ASSIGNMENT_ID,
@@ -511,7 +518,7 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             payload = response.json()
             self.assert_success_response_contract(
                 payload=payload,
-                expected_status="cloned",
+                expected_status="Pending",
                 expected_commit_hash="abc123",
                 expected_local_repo_path=str(refreshed_repo_path.relative_to(PROJECT_ROOT)),
                 expected_assignment_id=MOCK_ASSIGNMENT_ID,

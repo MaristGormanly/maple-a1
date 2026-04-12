@@ -101,25 +101,27 @@ The Milestone 2 deliverable connects all three workstreams in sequence. Jayden's
 
 ## Traceability Summary
 
+Verdicts below were reconciled with [`audits/milestone-02-forensic-audit-2026-04-11.md`](../../audits/milestone-02-forensic-audit-2026-04-11.md) (revision 2026-04-11). `*` = not reverified in this pass; use the audit matrix for Jayden/Sylvie/E2E detail.
+
 | # | Task (short label) | Assignee | Source file | Marker | Verdict |
 |---|---|---|---|---|---|
-| 1 | Docker socket on Droplet | Jayden | `docs/design-doc.md` | §6 `/var/run/docker.sock`; §8 Docker SDK integration | pass |
-| 2 | Docker SDK integration | Jayden | `docs/design-doc.md` | §8 "Implement Docker SDK integration" | pass |
-| 3 | Language-specific base images | Jayden | `docs/design-doc.md` | §8 "Define language-specific base images" | pass |
-| 4 | Container security hardening | Jayden | `docs/design-doc.md` | §8 "container security hardening"; §7 Risk 2 mitigation | pass |
-| 5 | 30s TTL + exit codes 137/124 | Jayden | `docs/design-doc.md` | §8 "30s TTL"; §3 §IV "Resource Constraints" | pass |
-| 6 | Log normalization circular buffer | Jayden | `docs/design-doc.md` | §8 "log normalization: circular buffer"; §3 §IV "Log Normalization" | pass |
-| 7 | Test suite injection | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "test suite injection"; `POST /assignments` `test_suite_repo_url` | pass |
-| 8 | Test result capture → structured JSON | Dom | `docs/design-doc.md` | §8 "test result capture: parse stdout/stderr into structured JSON" | pass |
-| 9 | Language version detection | Dom | `docs/design-doc.md` | §8 "language version detection"; §3 §II "Version Detection" | pass |
-| 10 | `deterministic_score` calculation | Dom | `docs/design-doc.md` | §8 "Calculate `deterministic_score`" | pass |
-| 11 | Persist `EvaluationResult` | Dom | `docs/design-doc.md` | §8 "Persist `EvaluationResult`"; §2 "Data Model — EvaluationResult" | pass |
-| 12 | `POST /evaluate` async dispatch | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "async task dispatch"; `POST /evaluate` response contract | pass |
-| 13 | `GET /submissions/{id}` backend endpoint | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "Implement `GET …/submissions/{id}`"; `GET /submissions/{submission_id}` | pass |
-| 14 | `POST /assignments` `test_suite_repo_url` | Sylvie | `docs/api-spec.md` | `POST /assignments` field table | pass |
-| 15 | `GET /assignments/{id}` returns `test_suite_repo_url` | Sylvie | `docs/api-spec.md` | `GET /assignments/{assignment_id}` success response | pass |
-| 16 | `GET /submissions/{id}` error contracts | Sylvie | `docs/api-spec.md` | `GET /submissions/{submission_id}` Errors table | pass |
-| 17 | Angular submission form (M1 carryover) | Sylvie | `docs/design-doc.md` | §8 "Angular scaffold: student submission form" | pass |
-| 18 | Status polling page | Sylvie | `docs/design-doc.md` | §8 "Angular: submission status polling"; §1 User Story 8 | pass |
-| 19 | Test result display in UI | Sylvie | `docs/design-doc.md` + `docs/api-spec.md` | §8 "test result display with pass/fail breakdown"; `GET /submissions/{id}` with-evaluation response | pass |
-| E2E | End-to-end 60s verification | All | `docs/design-doc.md` | §8 deliverable; §5 "Sandboxed execution" NFR-1.1 | pass |
+| 1 | Docker socket on Droplet | Jayden | `docs/design-doc.md` | §6 `/var/run/docker.sock`; §8 Docker SDK integration | pass * |
+| 2 | Docker SDK integration | Jayden | `docs/design-doc.md` | §8 "Implement Docker SDK integration" | pass * |
+| 3 | Language-specific base images | Jayden | `docs/design-doc.md` | §8 "Define language-specific base images" | pass * |
+| 4 | Container security hardening | Jayden | `docs/design-doc.md` | §8 "container security hardening"; §7 Risk 2 mitigation | pass * |
+| 5 | 30s TTL + exit codes 137/124 | Jayden | `docs/design-doc.md` | §8 "30s TTL"; §3 §IV "Resource Constraints" | pass * |
+| 6 | Log normalization circular buffer | Jayden | `docs/design-doc.md` | §8 "log normalization: circular buffer"; §3 §IV "Log Normalization" | pass * |
+| 7 | Test suite injection | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "test suite injection"; `POST /assignments` `test_suite_repo_url` | **partial** — clone + `run_container` paths; SDK mounts pending Jayden |
+| 8 | Test result capture → structured JSON | Dom | `docs/design-doc.md` | §8 "test result capture: parse stdout/stderr into structured JSON" | **pass** — `parse_test_results` + `run_pipeline` |
+| 9 | Language version detection | Dom | `docs/design-doc.md` | §8 "language version detection"; §3 §II "Version Detection" | **pass** — `detect_language_version` → `metadata_json.language` |
+| 10 | `deterministic_score` calculation | Dom | `docs/design-doc.md` | §8 "Calculate `deterministic_score`" | **pass** — `calculate_deterministic_score` in `run_pipeline` |
+| 11 | Persist `EvaluationResult` | Dom | `docs/design-doc.md` | §8 "Persist `EvaluationResult`"; §2 "Data Model — EvaluationResult" | **pass** — score + `metadata_json` (language, exit_code, constraints, test_summary) |
+| 12 | `POST /evaluate` async dispatch | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "async task dispatch"; `POST /evaluate` response contract | **pass** — `create_task`; response `status` `"Pending"` when assignment set |
+| 13 | `GET /submissions/{id}` backend endpoint | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "Implement `GET …/submissions/{id}`"; `GET /submissions/{submission_id}` | **pass** — `evaluation` + `evaluation.metadata` subset for UI |
+| 14 | `POST /assignments` `test_suite_repo_url` | Sylvie | `docs/api-spec.md` | `POST /assignments` field table | pass * |
+| 15 | `GET /assignments/{id}` returns `test_suite_repo_url` | Sylvie | `docs/api-spec.md` | `GET /assignments/{assignment_id}` success response | pass * |
+| 16 | `GET /submissions/{id}` error contracts | Sylvie | `docs/api-spec.md` | `GET /submissions/{submission_id}` Errors table | pass * |
+| 17 | Angular submission form (M1 carryover) | Sylvie | `docs/design-doc.md` | §8 "Angular scaffold: student submission form" | pass * |
+| 18 | Status polling page | Sylvie | `docs/design-doc.md` | §8 "Angular: submission status polling"; §1 User Story 8 | **fail** — TODO placeholder; no polling (`audit` §2 Sylvie) |
+| 19 | Test result display in UI | Sylvie | `docs/design-doc.md` + `docs/api-spec.md` | §8 "test result display with pass/fail breakdown"; `GET /submissions/{id}` with-evaluation response | **fail** — no score/summary in Angular (`audit` §2 Sylvie) |
+| E2E | End-to-end 60s verification | All | `docs/design-doc.md` | §8 deliverable; §5 "Sandboxed execution" NFR-1.1 | **fail** — Docker stub + frontend gaps (`audit` §2 E2E) |
