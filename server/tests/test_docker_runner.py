@@ -92,7 +92,7 @@ class TestRunContainerSync(unittest.TestCase):
         result = _run_container_sync(config)
 
         self.assertTrue(result.timed_out)
-        self.assertEqual(result.exit_code, -1)
+        self.assertEqual(result.exit_code, 124)  # TTL exit code per design-doc §3 §IV
         container.kill.assert_called_once()
         container.remove.assert_called_once_with(force=True)
         client.close.assert_called_once()
@@ -113,6 +113,30 @@ class TestRunContainerSync(unittest.TestCase):
             _run_container_sync(config)
 
         container.remove.assert_called_once_with(force=True)
+
+    @patch(_CLIENT_PATCH)
+    @patch(_SETTINGS_PATCH)
+    def test_oom_kill_returns_exit_code_137(self, mock_settings, mock_get_client):
+        """When Docker OOM-kills the container, exit_code 137 passes through unchanged.
+
+        The Linux OOM killer sends SIGKILL (9); Docker surfaces this as StatusCode 137
+        (128 + 9) from container.wait(). This is the happy-path return — no exception
+        is raised. Downstream, test_parser._resource_constraint_metadata maps 137 to
+        {"oom_killed": True, "timed_out": False}.
+        """
+        mock_settings.DOCKER_CONTAINER_TIMEOUT = 60
+        container = _make_mock_container(exit_code=137, stdout=b"", stderr=b"Killed\n")
+        client = _make_mock_client(container)
+        mock_get_client.return_value = client
+
+        config = ContainerConfig(image="python:3.12-slim", command="stress --vm 512m")
+        result = _run_container_sync(config)
+
+        self.assertEqual(result.exit_code, 137)
+        self.assertFalse(result.timed_out)
+        # Container is still cleaned up in the finally block
+        container.remove.assert_called_once_with(force=True)
+        client.close.assert_called_once()
 
     @patch(_CLIENT_PATCH)
     @patch(_SETTINGS_PATCH)

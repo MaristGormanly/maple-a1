@@ -131,3 +131,28 @@ You finish Milestone 2’s runtime layer when those six behaviors are true, test
 
 No gaps. Subagent noted one beneficial improvement over the spec: correctly prescribes `systemctl restart maple-a1` rather than just "re-login", which would not be sufficient for a running systemd service.
 
+---
+
+### 2026-04-14 — Task 5: 30-Second TTL and Exit Codes 124 / 137
+
+**Task:** Implement a 30-second TTL: forcibly kill containers that exceed the time limit; map exit code `124` (timeout) and `137` (OOM kill) to a `resource_constraint_metadata` flag injected into the evaluation reasoning object rather than failing silently.
+
+**What shipped:**
+- **`server/app/services/docker_runner.py`** — One-line fix in `_run_container_sync`: the `except Exception:` timeout handler previously returned `exit_code=-1`; changed to `exit_code=124` (Unix `timeout(1)` convention; design-doc §3 §IV requirement). The `timed_out=True` field is preserved for internal diagnostics.
+- **`server/tests/test_docker_runner.py`** — Two test changes:
+  - Updated `test_container_removed_on_wait_timeout` to assert `exit_code == 124` (was asserting `-1`, which was the failing contract).
+  - Added `test_oom_kill_returns_exit_code_137`: verifies that when Docker surfaces `StatusCode: 137` from `container.wait()` (OOM killer path — no exception raised), the exit code passes through unchanged with `timed_out=False`.
+
+**How exit codes flow to `resource_constraint_metadata`:**
+1. `docker_runner._run_container_sync` returns `ContainerResult(exit_code=124|137, ...)`
+2. `docker_client.run_container` bridges to `pipeline.py`'s `ContainerResult`
+3. `pipeline.run_pipeline` passes `container.exit_code` to `parse_test_results()`
+4. `test_parser._resource_constraint_metadata(exit_code)` returns:
+   - `{"exit_code": 124, "oom_killed": False, "timed_out": True}` for timeout
+   - `{"exit_code": 137, "oom_killed": True, "timed_out": False}` for OOM
+   - `None` for all other exit codes
+5. `pipeline.py` stores this in `metadata_json["resource_constraint_metadata"]` and persists in `EvaluationResult.metadata_json`.
+
+**No changes to `pipeline.py` or `test_parser.py`** — both were already spec-compliant. The only broken link was the runner returning `-1` instead of `124`.
+
+**Verification:** `pytest server/tests/test_docker_runner.py -v` — all 7 tests pass.

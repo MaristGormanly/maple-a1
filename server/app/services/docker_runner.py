@@ -39,10 +39,15 @@ class ContainerConfig:
     working_dir: str | None = None
     timeout: int | None = None
     network_disabled: bool = False
-    # Resource limits — Task 4 (security hardening) will set these.
+    # Resource limits (Task 4)
     mem_limit: str | None = None
     cpu_period: int | None = None
     cpu_quota: int | None = None
+    # Security hardening (Task 4)
+    cap_drop: list[str] = field(default_factory=list)
+    security_opt: list[str] = field(default_factory=list)
+    read_only: bool = False
+    tmpfs: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -107,6 +112,14 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         create_kwargs["cpu_period"] = config.cpu_period
     if config.cpu_quota is not None:
         create_kwargs["cpu_quota"] = config.cpu_quota
+    if config.cap_drop:
+        create_kwargs["cap_drop"] = config.cap_drop
+    if config.security_opt:
+        create_kwargs["security_opt"] = config.security_opt
+    if config.read_only:
+        create_kwargs["read_only"] = True
+    if config.tmpfs:
+        create_kwargs["tmpfs"] = config.tmpfs
 
     try:
         container = client.containers.create(**create_kwargs)
@@ -143,7 +156,7 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
                     "utf-8", errors="replace"
                 )
                 return ContainerResult(
-                    exit_code=-1,
+                    exit_code=124,  # TTL exceeded — design-doc §3 §IV; maps to timed_out=True in test_parser
                     stdout=stdout,
                     stderr=stderr,
                     timed_out=True,

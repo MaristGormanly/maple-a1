@@ -16,13 +16,13 @@
 
 - [X] Integrate Docker SDK: spin up ephemeral sibling containers via the host UNIX socket `/var/run/docker.sock` (no Docker-in-Docker). — *`docs/design-doc.md` §8 "Implement Docker SDK integration: spin up ephemeral sibling containers via `/var/run/docker.sock`"*
 
-- [ ] Define language-specific base images for the sandbox: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest. — *`docs/design-doc.md` §8 "Define language-specific base images: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest"*
+- [X] Define language-specific base images for the sandbox: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest. — *`docs/design-doc.md` §8 "Define language-specific base images: Python/Pytest, Java/JUnit, JavaScript/Jest, TypeScript/Jest"*
   > *Depends on: Docker socket task above (images are pulled/built against the live daemon).*
 
-- [ ] Implement container security hardening: run with `--no-new-privileges`, drop all Linux capabilities, mount root filesystem read-only, and apply CPU and memory limits via Docker SDK. — *`docs/design-doc.md` §8 "Implement container security hardening: `--no-new-privileges`, dropped Linux capabilities, read-only FS, CPU/memory limits, 30s TTL"*; also `docs/design-doc.md` §7 "Risk 2: Docker Sandbox Misconfiguration" (mitigation)*
+- [X] Implement container security hardening: run with `--no-new-privileges`, drop all Linux capabilities, mount root filesystem read-only, and apply CPU and memory limits via Docker SDK. — *`docs/design-doc.md` §8 "Implement container security hardening: `--no-new-privileges`, dropped Linux capabilities, read-only FS, CPU/memory limits, 30s TTL"*; also `docs/design-doc.md` §7 "Risk 2: Docker Sandbox Misconfiguration" (mitigation)*
   > *Depends on: Docker SDK integration task above (hardening flags are applied at container creation).*
 
-- [ ] Implement a 30-second TTL: forcibly kill containers that exceed the time limit; map exit code `124` (timeout) and `137` (OOM kill) to a `resource_constraint_metadata` flag injected into the evaluation reasoning object rather than failing silently. — *`docs/design-doc.md` §8 "30s TTL" and §3 §IV "Resource Constraints: exit codes 137 (OOM) or 124 (Timeout) … inject a Resource Constraint Metadata flag"*
+- [X] Implement a 30-second TTL: forcibly kill containers that exceed the time limit; map exit code `124` (timeout) and `137` (OOM kill) to a `resource_constraint_metadata` flag injected into the evaluation reasoning object rather than failing silently. — *`docs/design-doc.md` §8 "30s TTL" and §3 §IV "Resource Constraints: exit codes 137 (OOM) or 124 (Timeout) … inject a Resource Constraint Metadata flag"*
   > *Depends on: Docker SDK integration task above. The `resource_constraint_metadata` flag is consumed by Dom's test result capture task.*
 
 - [ ] Implement log normalization using a circular buffer: retain the first 2 KB and last 5 KB of the execution trace; discard the middle to prevent context bloat. — *`docs/design-doc.md` §8 "Implement log normalization: circular buffer keeping first 2KB + last 5KB of execution trace"*; also `docs/design-doc.md` §3 §IV "Log Normalization: Circular Buffer truncates logs, retaining only the first 2KB and last 5KB"*
@@ -108,8 +108,8 @@ Verdicts below were reconciled with [`audits/milestone-02-forensic-audit-2026-04
 | 1 | Docker socket on Droplet | Jayden | `docs/design-doc.md` | §6 `/var/run/docker.sock`; §8 Docker SDK integration | pass * |
 | 2 | Docker SDK integration | Jayden | `docs/design-doc.md` | §8 "Implement Docker SDK integration" | pass * |
 | 3 | Language-specific base images | Jayden | `docs/design-doc.md` | §8 "Define language-specific base images" | pass * |
-| 4 | Container security hardening | Jayden | `docs/design-doc.md` | §8 "container security hardening"; §7 Risk 2 mitigation | pass * |
-| 5 | 30s TTL + exit codes 137/124 | Jayden | `docs/design-doc.md` | §8 "30s TTL"; §3 §IV "Resource Constraints" | pass * |
+| 4 | Container security hardening | Jayden | `docs/design-doc.md` | §8 "container security hardening"; §7 Risk 2 mitigation | **pass** — `no-new-privileges`, `cap_drop=ALL`, `read_only`, `mem_limit=256m`, `cpu_quota=50000`, `tmpfs /tmp /root`, `network_disabled` in `docker_client.py` |
+| 5 | 30s TTL + exit codes 137/124 | Jayden | `docs/design-doc.md` | §8 "30s TTL"; §3 §IV "Resource Constraints" | **pass** — timeout exception handler returns `exit_code=124`; OOM flows through as `137` via `container.wait()` StatusCode; `test_parser._resource_constraint_metadata` maps both to structured flag; `pipeline.py` persists in `metadata_json.resource_constraint_metadata` |
 | 6 | Log normalization circular buffer | Jayden | `docs/design-doc.md` | §8 "log normalization: circular buffer"; §3 §IV "Log Normalization" | pass * |
 | 7 | Test suite injection | Dom | `docs/design-doc.md` + `docs/api-spec.md` | §8 "test suite injection"; `POST /assignments` `test_suite_repo_url` | **partial** — clone + `run_container` paths; SDK mounts pending Jayden |
 | 8 | Test result capture → structured JSON | Dom | `docs/design-doc.md` | §8 "test result capture: parse stdout/stderr into structured JSON" | **pass** — `parse_test_results` + `run_pipeline` |

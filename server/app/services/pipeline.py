@@ -18,18 +18,6 @@ logger = logging.getLogger(__name__)
 
 _CONTAINER_TIMEOUT_SECONDS = 30
 
-_LANGUAGE_IMAGE_MAP: dict[str, str] = {
-    "python": "python:3.12-slim",
-    "java": "openjdk:17-slim",
-    "javascript": "node:20-slim",
-    "typescript": "node:20-slim",
-    "cpp": "gcc:13",
-}
-_DEFAULT_IMAGE = "python:3.12-slim"
-
-
-def _eval_image(language: str) -> str:
-    return _LANGUAGE_IMAGE_MAP.get((language or "").lower(), _DEFAULT_IMAGE)
 
 
 async def run_pipeline(
@@ -64,9 +52,9 @@ async def run_pipeline(
         await app_main.clone_repository(suite_url, test_suite_dir, github_pat)
 
         lang = detect_language_version(student_repo_path, language_override)
-        image = _eval_image(lang.get("language", ""))
+        language = lang.get("language", "")
         container = await run_container(
-            image,
+            language,
             student_repo_path,
             str(test_suite_dir.resolve()),
             timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
