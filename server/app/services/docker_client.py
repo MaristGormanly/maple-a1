@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from .docker_runner import ContainerConfig
 from .docker_runner import ContainerResult as _RunnerResult
 from .docker_runner import run_container as _docker_run
+from .log_normalizer import normalize_logs
 from .sandbox_images import get_sandbox_profile
 
 
@@ -107,7 +108,7 @@ async def run_container(
 
     result: _RunnerResult = await _docker_run(config)
     return ContainerResult(
-        stdout=result.stdout,
-        stderr=result.stderr,
+        stdout=normalize_logs(result.stdout),
+        stderr=normalize_logs(result.stderr),
         exit_code=result.exit_code,
     )
