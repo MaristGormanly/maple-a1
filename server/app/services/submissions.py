@@ -1,10 +1,18 @@
+import logging
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.evaluation_result import EvaluationResult
 from ..models.submission import Submission
+
+logger = logging.getLogger(__name__)
+
+
+class DuplicateEvaluationError(Exception):
+    """Raised when an EvaluationResult already exists for the submission."""
 
 
 async def create_submission(
@@ -53,6 +61,12 @@ async def persist_evaluation_result(
     deterministic_score: float | None,
     metadata_json: dict | None = None,
 ) -> EvaluationResult:
+    """Persist an EvaluationResult row.
+
+    Raises ``DuplicateEvaluationError`` (instead of a raw
+    ``IntegrityError``) when a result already exists for *submission_id*,
+    so callers can treat duplicate runs as non-fatal.
+    """
     row = EvaluationResult(
         id=uuid.uuid4(),
         submission_id=submission_id,
@@ -61,7 +75,17 @@ async def persist_evaluation_result(
         metadata_json=metadata_json,
     )
     db.add(row)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.warning(
+            "Duplicate EvaluationResult for submission %s — treating as idempotent",
+            submission_id,
+        )
+        raise DuplicateEvaluationError(
+            f"EvaluationResult already exists for submission {submission_id}"
+        )
     await db.refresh(row)
     return row
 

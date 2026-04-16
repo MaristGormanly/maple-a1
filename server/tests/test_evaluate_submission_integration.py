@@ -707,6 +707,131 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             expected_message=f"Assignment '{nonexistent_id}' does not exist.",
         )
 
+    def test_evaluate_dispatch_arguments_on_fresh_clone(self) -> None:
+        self._run_pipeline_patcher.stop()
+        captured_pipeline = AsyncMock()
+        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+            temp_root = Path(tmp_dir)
+            staging_path = temp_root / "staging-repo"
+            repo_path = temp_root / "cached-repo"
+            cache_index_path = temp_root / "repository-cache-index.json"
+
+            def clone_side_effect(_clone_url: str, destination_path: Path, _github_pat: str) -> str:
+                self._write_file(destination_path / "src" / "main.py", "print('hello')\n")
+                return "abc123"
+
+            with patch("app.main.get_required_github_pat", return_value="test-pat"), patch(
+                "app.main.validate_github_repo_access",
+                new=AsyncMock(
+                    return_value=GitHubRepoMetadata(
+                        full_name="student/example-assignment",
+                        default_branch="main",
+                        visibility="private",
+                        clone_url="https://github.com/student/example-assignment.git",
+                    )
+                ),
+            ), patch(
+                "app.main.resolve_repository_head_commit_hash",
+                new=AsyncMock(return_value="abc123"),
+            ), patch("app.main.create_staging_clone_path", return_value=staging_path), patch(
+                "app.main.determine_raw_clone_path",
+                return_value=repo_path,
+            ), patch(
+                "app.main.CACHE_INDEX_PATH",
+                cache_index_path,
+            ), patch(
+                "app.main.clone_repository",
+                new=AsyncMock(side_effect=clone_side_effect),
+            ), patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ), patch(
+                "app.main.run_pipeline",
+                new=captured_pipeline,
+            ):
+                client = TestClient(app)
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
+                    rubric=self._sample_rubric(),
+                )
+
+            self.assertEqual(response.status_code, 200)
+            captured_pipeline.assert_called_once()
+            call_args = captured_pipeline.call_args
+            self.assertEqual(call_args[0][0], MOCK_SUBMISSION_ID)
+            self.assertEqual(
+                call_args[0][1], uuid.UUID(MOCK_ASSIGNMENT_ID)
+            )
+            self.assertIn(str(repo_path.resolve()), call_args[0][2])
+            self.assertEqual(call_args[0][3], self._sample_rubric())
+            self.assertEqual(call_args[0][4], "test-pat")
+        self._run_pipeline_patcher.start()
+
+    def test_evaluate_dispatch_arguments_on_cache_hit(self) -> None:
+        self._run_pipeline_patcher.stop()
+        captured_pipeline = AsyncMock()
+        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+            temp_root = Path(tmp_dir)
+            repo_path = temp_root / "cached-repo"
+            cache_index_path = temp_root / "repository-cache-index.json"
+            self._write_file(repo_path / "src" / "main.py", "print('cached')\n")
+
+            rubric_fingerprint = fingerprint_rubric_content(self._sample_rubric())
+            cache_key = build_repository_cache_key("abc123", rubric_fingerprint.digest)
+            cache_entry = create_repository_cache_entry(
+                cache_key=cache_key,
+                assignment_id=MOCK_ASSIGNMENT_ID,
+                rubric_fingerprint=rubric_fingerprint,
+                full_repo_name="student/example-assignment",
+                local_repo_path=repo_path,
+                project_root=PROJECT_ROOT,
+            )
+            save_repository_cache_entry(cache_index_path, cache_entry)
+
+            with patch("app.main.get_required_github_pat", return_value="test-pat"), patch(
+                "app.main.validate_github_repo_access",
+                new=AsyncMock(
+                    return_value=GitHubRepoMetadata(
+                        full_name="student/example-assignment",
+                        default_branch="main",
+                        visibility="private",
+                        clone_url="https://github.com/student/example-assignment.git",
+                    )
+                ),
+            ), patch(
+                "app.main.resolve_repository_head_commit_hash",
+                new=AsyncMock(return_value="abc123"),
+            ), patch(
+                "app.main.CACHE_INDEX_PATH",
+                cache_index_path,
+            ), patch(
+                "app.main.create_submission",
+                new=self._mock_create_submission(),
+            ), patch(
+                "app.main.run_pipeline",
+                new=captured_pipeline,
+            ):
+                client = TestClient(app)
+                response = self._post_evaluate(
+                    client,
+                    github_url="https://github.com/student/example-assignment",
+                    assignment_id=MOCK_ASSIGNMENT_ID,
+                    rubric=self._sample_rubric(),
+                )
+
+            self.assertEqual(response.status_code, 200)
+            captured_pipeline.assert_called_once()
+            call_args = captured_pipeline.call_args
+            self.assertEqual(call_args[0][0], MOCK_SUBMISSION_ID)
+            self.assertEqual(
+                call_args[0][1], uuid.UUID(MOCK_ASSIGNMENT_ID)
+            )
+            self.assertEqual(call_args[0][3], self._sample_rubric())
+            self.assertEqual(call_args[0][4], "test-pat")
+        self._run_pipeline_patcher.start()
+
     def test_evaluate_submission_succeeds_with_existing_assignment(self) -> None:
         with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
             temp_root = Path(tmp_dir)

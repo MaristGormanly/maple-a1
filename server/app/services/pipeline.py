@@ -11,7 +11,11 @@ from .assignments import get_assignment_by_id
 from .docker_client import run_container
 from .language_detector import detect_language_version
 from .scoring import calculate_deterministic_score
-from .submissions import persist_evaluation_result, update_submission_status
+from .submissions import (
+    DuplicateEvaluationError,
+    persist_evaluation_result,
+    update_submission_status,
+)
 from .test_parser import parse_test_results
 
 logger = logging.getLogger(__name__)
@@ -84,6 +88,12 @@ async def run_pipeline(
                 metadata_json=metadata_json,
             )
             await update_submission_status(db, submission_id, "Completed")
+    except DuplicateEvaluationError:
+        logger.info(
+            "run_pipeline: duplicate evaluation for submission %s — "
+            "keeping existing result and Completed status",
+            submission_id,
+        )
     except Exception:
         logger.exception("run_pipeline failed for submission %s", submission_id)
         try:

@@ -340,5 +340,135 @@ class PipelineTests(unittest.TestCase):
         asyncio.run(_run())
 
 
+    def test_run_pipeline_stays_completed_on_duplicate_evaluation(self) -> None:
+        """A duplicate EvaluationResult must not transition the submission to Failed."""
+
+        async def _run() -> None:
+            mock_db = MagicMock()
+            mock_db.commit = AsyncMock()
+            mock_db.refresh = AsyncMock()
+            mock_db.add = MagicMock()
+
+            class _CM:
+                async def __aenter__(self):
+                    return mock_db
+
+                async def __aexit__(self, *args):
+                    return None
+
+            status_calls: list[str] = []
+
+            async def track_status(db, sid, status):
+                status_calls.append(status)
+                return MagicMock()
+
+            container_result = ContainerResult(
+                stdout=PYTEST_ALL_PASS_STDOUT, stderr="", exit_code=0
+            )
+
+            from app.services.submissions import DuplicateEvaluationError
+
+            with (
+                patch(
+                    "app.services.pipeline.async_session_maker",
+                    return_value=_CM(),
+                ),
+                patch(
+                    "app.services.pipeline.update_submission_status",
+                    new=AsyncMock(side_effect=track_status),
+                ),
+                patch(
+                    "app.services.pipeline.get_assignment_by_id",
+                    new=AsyncMock(return_value=_fake_assignment()),
+                ),
+                patch(
+                    "app.services.pipeline.run_container",
+                    new=AsyncMock(return_value=container_result),
+                ),
+                patch(
+                    "app.services.pipeline.persist_evaluation_result",
+                    new=AsyncMock(
+                        side_effect=DuplicateEvaluationError("already exists"),
+                    ),
+                ),
+                patch(
+                    "app.main.clone_repository",
+                    new=AsyncMock(return_value="deadbeef"),
+                ),
+                patch(
+                    "app.services.pipeline.detect_language_version",
+                    return_value=FAKE_LANGUAGE,
+                ),
+            ):
+                with tempfile.TemporaryDirectory() as tmp:
+                    student = Path(tmp) / "student"
+                    student.mkdir()
+                    await run_pipeline(
+                        MOCK_SUBMISSION_ID,
+                        MOCK_ASSIGNMENT_ID,
+                        str(student.resolve()),
+                        {"title": "r"},
+                        "github-pat",
+                    )
+
+            self.assertEqual(status_calls, ["Testing"])
+            self.assertNotIn("Failed", status_calls)
+
+        asyncio.run(_run())
+
+
+class PersistEvaluationResultTests(unittest.TestCase):
+    """Pin the idempotency contract of persist_evaluation_result."""
+
+    def test_raises_duplicate_evaluation_error_on_integrity_violation(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+        from app.services.submissions import (
+            DuplicateEvaluationError,
+            persist_evaluation_result,
+        )
+
+        async def _run() -> None:
+            mock_db = MagicMock()
+            mock_db.add = MagicMock()
+            mock_db.commit = AsyncMock(
+                side_effect=IntegrityError("dup", params=None, orig=Exception())
+            )
+            mock_db.rollback = AsyncMock()
+
+            with self.assertRaises(DuplicateEvaluationError):
+                await persist_evaluation_result(
+                    mock_db,
+                    submission_id=uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                    deterministic_score=90.0,
+                )
+
+            mock_db.rollback.assert_awaited_once()
+
+        asyncio.run(_run())
+
+    def test_succeeds_when_no_conflict(self) -> None:
+        from app.services.submissions import persist_evaluation_result
+
+        async def _run() -> None:
+            mock_db = MagicMock()
+            mock_db.add = MagicMock()
+            mock_db.commit = AsyncMock()
+            mock_db.refresh = AsyncMock()
+
+            result = await persist_evaluation_result(
+                mock_db,
+                submission_id=uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                deterministic_score=75.0,
+                metadata_json={"language": {"language": "python"}},
+            )
+
+            mock_db.add.assert_called_once()
+            mock_db.commit.assert_awaited_once()
+            mock_db.refresh.assert_awaited_once()
+            self.assertIsNotNone(result)
+
+        asyncio.run(_run())
+
+
 if __name__ == "__main__":
     unittest.main()
