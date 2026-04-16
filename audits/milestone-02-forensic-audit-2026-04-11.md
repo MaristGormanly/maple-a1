@@ -96,8 +96,8 @@ PostgreSQL (ORM models)
 | 15 | `GET /assignments/{id}` returns `test_suite_repo_url` | **Pass** | Same `_assignment_to_dict` helper used at line 95, includes `test_suite_repo_url` (line 33). |
 | 16 | `GET /submissions/{id}` error contracts (400/401/404) | **Pass** | `routers/submissions.py`: UUID validation returns 400 `VALIDATION_ERROR` (lines 44-49); missing record returns 404 `NOT_FOUND` (lines 60-64); JWT enforced via `Depends(get_current_user)` (line 40). Matches `docs/api-spec.md` error table. |
 | 17 | Angular submission form (M1 carryover) | **Pass** | `client/src/pages/submit-page/submit-page.component.ts` lines 14-19: reactive form with `githubUrl`, `assignmentId`, `rubricFile`. `EvaluationService.submitEvaluation()` posts multipart to `/api/v1/code-eval/evaluate`. Navigation to status page on success. |
-| 18 | Status polling page | **Fail** | `client/src/pages/status-page/status-page.component.ts` lines 24-26: explicit `// TODO (Milestone 2)` comment. No `HttpClient` usage, no polling interval, no GET request. Only shows data from `history.state` (router navigation state). Template (line 37) still says "live status lookup is not yet available." |
-| 19 | Test result display in UI | **Fail** | No `deterministic_score` rendering anywhere in `client/src/`. `api.types.ts` `SubmissionData` type has no evaluation/score fields. Status page template shows only clone/cache status badge (line 7), not test results. |
+| 18 | Status polling page | ~~**Fail**~~ **Resolved (2026-04-15)** | **Fixed:** `status-page.component.ts` TODO removed; `ngOnInit` calls `fetchStatus()` immediately then sets a 3 s `setInterval`; `isPolling()` returns false on `Completed`/`Failed`; `ngOnDestroy` clears the timer. `EvaluationService.getSubmissionStatus()` wired via `HttpClient`. |
+| 19 | Test result display in UI | ~~**Fail**~~ **Resolved (2026-04-15)** | **Fixed:** `api.types.ts` now defines `SubmissionStatusData` with optional `evaluation: EvaluationResult` (includes `deterministic_score`, `ai_feedback`, `metadata.test_summary`). Template renders score, passed/failed/errors/skipped counts, and framework name inside `@if (statusData.evaluation)`. |
 
 ### E2E — 60-second End-to-end Verification
 
@@ -113,8 +113,8 @@ PostgreSQL (ORM models)
 |----------|----------|-------|-------------|-------------|
 | ~~**High**~~ **Resolved** | **Dom** | ~~Pipeline does not wire parser / detector / scorer~~ | **Fixed (2026-04-11):** `run_pipeline` imports and calls `detect_language_version`, `parse_test_results`, and `calculate_deterministic_score`; `_language_info` / `_minimal_test_results` / `_deterministic_score` removed. | `server/app/services/pipeline.py` |
 | **High** | **Jayden** | Docker runtime is a non-functional stub | `docker_client.run_container()` always returns `exit_code=1` with empty stdout. With the **current** stub, `parse_test_results` yields zero counted tests → `calculate_deterministic_score` returns **0.0** (per product note: no tests counted). Pipeline unit tests use **parsable** mocked `stdout` to assert non-zero scores. Until Jayden delivers the SDK, production runs still get stub output. | `server/app/services/docker_client.py` |
-| **High** | **Sylvie** | Angular status page is a TODO placeholder | Lines 24-26 of `status-page.component.ts` contain an explicit TODO. No HTTP polling, no terminal-status detection. The template (line 37) tells the user "live status lookup is not yet available." This blocks the M2 deliverable: instructors cannot see test results in the UI. | `client/src/pages/status-page/status-page.component.ts` lines 24-26; `status-page.component.html` line 37 |
-| **High** | **Sylvie** | No test result display in frontend | `SubmissionData` type in `api.types.ts` has no `evaluation`, `deterministic_score`, or test breakdown fields. No component renders scores. M2 deliverable requires "test results displayed in the UI." | `client/src/utils/api.types.ts`; entire `client/src/pages/status-page/` |
+| ~~**High**~~ **Resolved (2026-04-15)** | **Sylvie** | ~~Angular status page is a TODO placeholder~~ | **Fixed:** TODO comment removed; `HttpClient` polling implemented in `ngOnInit` at 3 s interval; terminal-status detection via `TERMINAL_STATUSES = new Set(['Completed', 'Failed'])`; `ngOnDestroy` cleanup. | `client/src/pages/status-page/status-page.component.ts` |
+| ~~**High**~~ **Resolved (2026-04-15)** | **Sylvie** | ~~No test result display in frontend~~ | **Fixed:** `SubmissionStatusData` type added with optional `evaluation: EvaluationResult`; `TestSummary` and `LanguageInfo` subtypes defined. Template renders `deterministic_score`, per-category test counts, framework, and AI feedback inside `@if (statusData.evaluation)`. | `client/src/utils/api.types.ts`; `client/src/pages/status-page/status-page.component.html` |
 | ~~**Medium**~~ **Resolved** | **Dom** | ~~Pipeline timeout 3600s~~ | **Fixed:** `pipeline.py` uses `_CONTAINER_TIMEOUT_SECONDS = 30`. Stub still ignores the value until Jayden implements enforcement. | `server/app/services/pipeline.py` |
 | ~~**Medium**~~ **Resolved** | **Dom** | ~~`POST /evaluate` response `status` vs DB~~ | **Fixed:** When `parsed_assignment_id is not None`, HTTP `SubmissionData.status` is `"Pending"` (cache-hit and clone paths), matching DB. `docs/api-spec.md` §3 documents `"Pending"`. | `server/app/main.py`; `docs/api-spec.md` |
 | ~~**Medium**~~ **Resolved** | **Dom** | ~~`source` string inconsistency (`override` vs `language_override`)~~ | **Obviated:** `_language_info` removed; persisted `metadata_json.language` comes only from `detect_language_version` (`source="language_override"` when override set). | `server/app/services/pipeline.py`; `language_detector.py` |
@@ -123,7 +123,7 @@ PostgreSQL (ORM models)
 | **Low** | **Jayden** | No Dockerfiles or image build scripts | Design doc §8 calls for "Define language-specific base images." No `Dockerfile`, `docker-compose.yml`, or image-build script exists anywhere in the repo. | Glob for `Dockerfile*`: 0 results |
 | **Low** | **Dom** | `persist_evaluation_result` has no upsert guard | `EvaluationResult.submission_id` has a `unique=True` constraint. If `run_pipeline` is invoked twice for the same submission (e.g., retry), the second call will raise `IntegrityError` and the pipeline catches it as `Failed`, but the user gets no clear error message. | `server/app/models/evaluation_result.py` line 15; `server/app/services/submissions.py` lines 56-66 |
 | **Informational** | **All** | `milestone-02-tasks.md` Traceability Summary marks all tasks "pass" | The Traceability Summary table (lines 104-125) shows verdict "pass" for all 19 tasks + E2E, but all task checkboxes in the body (lines 15-86) are `[ ]` unchecked. The table was written as an aspirational template, not a verified audit. This document should not be trusted as a status report. | `docs/milestones/milestone-02-tasks.md` lines 104-125 vs lines 15-86 |
-| **Informational** | **Sylvie** | Angular has zero test coverage for M2 | Only `app.spec.ts` exists with 2 trivial tests. No tests for submit page, status page, evaluation service, or any M2 feature. | `client/src/app/app.spec.ts` |
+| ~~**Informational**~~ **Resolved (2026-04-15)** | **Sylvie** | ~~Angular has zero test coverage for M2~~ | **Fixed:** `vitest.config` wired via `@angular/build:unit-test` with `runner: "vitest"`; `src/test-setup.ts` initialises `TestBed`; `submit-page.component.spec.ts` (11 tests), `status-page.component.spec.ts` (16 tests), and `evaluation.service.spec.ts` (6 tests) fully implemented. | `client/src/**/*.spec.ts`; `client/angular.json`; `client/src/test-setup.ts` |
 | **Informational** | **Dom** | `evaluate_submission_integration` tests mock `run_pipeline` globally | `test_evaluate_submission_integration.py` lines 46-50 patch `app.main.run_pipeline` with `AsyncMock()` in `setUp`. This is correct for isolating evaluate-path tests, but means the integration suite does not verify that the pipeline is dispatched or that the dispatch arguments are correct. | `server/tests/test_evaluate_submission_integration.py` lines 46-50 |
 
 ---
@@ -138,8 +138,8 @@ PostgreSQL (ORM models)
 |---|------|-------------|-------------------|
 | ~~H1~~ **Done** | ~~Pipeline does not wire `test_parser`, `language_detector`, `scoring`~~ | ~~As below~~ | Implemented in `pipeline.py`; private helpers removed; `test_pipeline.py` asserts metadata and scores with parsable mocked stdout. |
 | H2 | Docker runtime stub | Jayden: integrate `docker` SDK or `aiodocker`. Implement `run_container()` body with real `client.containers.run(...)`, volume mounts to `/workspace/student` and `/workspace/tests` (read-only), security flags, TTL kill, and log capture. Add `docker>=7.0` to `requirements.txt`. | `run_container()` starts a real container and returns actual stdout/stderr/exit_code. Integration test against Docker daemon passes. |
-| H3 | Angular status polling | Sylvie: implement `HttpClient.get(GET /submissions/${id})` on a 3-5s interval in `StatusPageComponent.ngOnInit()`. Stop polling when `status` is `Completed` or `Failed`. Display `status` badge with M2 values (`Pending`, `Testing`, `Completed`, `Failed`). | Direct navigation to `/status/:uuid` fetches and displays live submission state; polling stops on terminal status. |
-| H4 | Test result display in Angular | Sylvie: extend `SubmissionData` type with optional `evaluation` object. When present, render `deterministic_score` and pass/fail summary in the status page template. | Instructor sees numeric score and test breakdown after pipeline completes. |
+| ~~H3~~ **Done (2026-04-15)** | ~~Angular status polling~~ | Implemented: 3 s polling loop in `ngOnInit`, stops on `Completed`/`Failed`, `ngOnDestroy` cleanup. | ✓ Polling stops on terminal status; direct navigation to `/status/:uuid` fetches live state. |
+| ~~H4~~ **Done (2026-04-15)** | ~~Test result display in Angular~~ | Implemented: `SubmissionStatusData` with optional `evaluation`; template renders `deterministic_score`, pass/fail/errors/skipped counts, framework. | ✓ Instructor sees numeric score and test breakdown after pipeline completes. |
 
 ### Medium priority
 
@@ -198,15 +198,15 @@ PostgreSQL (ORM models)
 | 15 | `GET /assignments/{id}` returns field | Sylvie | **Pass** | Via `_assignment_to_dict` |
 | 16 | `GET /submissions/{id}` error contracts | Sylvie | **Pass** | 400/401/404 per spec |
 | 17 | Angular submission form | Sylvie | **Pass** | Reactive form + multipart POST |
-| 18 | Status polling page | Sylvie | **Fail** | TODO placeholder; no HTTP call |
-| 19 | Test result display in UI | Sylvie | **Fail** | No score/breakdown rendering |
+| 18 | Status polling page | Sylvie | ~~**Fail**~~ **Resolved (2026-04-15)** | Polling implemented; see §3 H3 |
+| 19 | Test result display in UI | Sylvie | ~~**Fail**~~ **Resolved (2026-04-15)** | Score + test breakdown rendered; see §3 H4 |
 | E2E | 60s end-to-end | All | **Fail** | Docker stub + no frontend polling + no result UI |
 
 ### Score summary
 
 - **Jayden:** 0 Pass, 2 Partial, 4 Fail (0 of 6 fully done)
 - **Dom:** 6 Pass, 1 Partial, 0 Fail (6 of 7 fully done; Task 7 blocked on Jayden SDK for real mounts)
-- **Sylvie:** 4 Pass, 0 Partial, 2 Fail (4 of 6 fully done)
+- **Sylvie:** ~~4 Pass, 0 Partial, 2 Fail (4 of 6 fully done)~~ **6 Pass, 0 Partial, 0 Fail (6 of 6 fully done — tasks 18/19 resolved 2026-04-15)**
 - **E2E:** Fail (blocked by all three workstreams)
 
 ### Documentation drift

@@ -1,4 +1,84 @@
-@if (data) {
+@if (statusData) {
+  <div class="status-card">
+    <p class="submission-id">{{ statusData.submission_id }}</p>
+
+    <div class="row">
+      <span class="label">Status</span>
+      <span class="badge" [class.badge--green]="statusData.status === 'cloned' || statusData.status === 'cached' || statusData.status === 'Completed'">
+        {{ statusData.status }}
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="label">GitHub URL</span>
+      <span>{{ statusData.github_repo_url }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Assignment ID</span>
+      <span>{{ statusData.assignment_id ?? 'None' }}</span>
+    </div>
+
+    @if (statusData.commit_hash) {
+      <div class="row">
+        <span class="label">Commit</span>
+        <span class="mono">{{ abbrev(statusData.commit_hash) }}</span>
+      </div>
+    }
+
+    @if (statusData.evaluation) {
+      <div class="evaluation-panel">
+        <div class="row">
+          <span class="label">Score</span>
+          <span>{{ statusData.evaluation.deterministic_score ?? '—' }}</span>
+        </div>
+
+        @if (testSummary) {
+          <div class="row">
+            <span class="label">Tests run</span>
+            <span>{{ totalTests }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Passed</span>
+            <span class="badge badge--green">{{ testSummary.passed }}</span>
+          </div>
+          @if (testSummary.failed > 0) {
+            <div class="row">
+              <span class="label">Failed</span>
+              <span class="badge badge--red">{{ testSummary.failed }}</span>
+            </div>
+          }
+          @if (testSummary.errors > 0) {
+            <div class="row">
+              <span class="label">Errors</span>
+              <span class="badge badge--red">{{ testSummary.errors }}</span>
+            </div>
+          }
+          @if (testSummary.skipped > 0) {
+            <div class="row">
+              <span class="label">Skipped</span>
+              <span>{{ testSummary.skipped }}</span>
+            </div>
+          }
+          <div class="row">
+            <span class="label">Framework</span>
+            <span class="mono">{{ testSummary.framework }}</span>
+          </div>
+        }
+
+        @if (statusData.evaluation.ai_feedback?.summary) {
+          <div class="row row--block">
+            <span class="label">Feedback</span>
+            <p class="ai-feedback">{{ statusData.evaluation.ai_feedback!.summary }}</p>
+          </div>
+        }
+      </div>
+    }
+
+    <a routerLink="/submit">Submit another</a>
+  </div>
+} @else if (data) {
+  <!-- Fallback: render M1 POST /evaluate response while the first poll loads -->
   <div class="status-card">
     <p class="submission-id">{{ data.submission_id }}</p>
 
@@ -33,8 +113,10 @@
   </div>
 } @else {
   <div class="status-card">
-    @if (submissionId) {
-      <p>Submission <strong>{{ submissionId }}</strong> was received, but live status lookup is not yet available. A <code>GET /api/v1/code-eval/submissions/:id</code> endpoint is pending backend implementation.</p>
+    @if (pollError) {
+      <p class="error-banner" role="alert">{{ pollError }}</p>
+    } @else if (submissionId) {
+      <p>Loading submission <strong>{{ submissionId }}</strong>…</p>
     } @else {
       <p>No submission data found. Please <a routerLink="/submit">submit a repository</a> to begin.</p>
     }
