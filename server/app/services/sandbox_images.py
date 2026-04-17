@@ -62,3 +62,36 @@ DEFAULT_PROFILE = SANDBOX_PROFILES["python"]
 def get_sandbox_profile(language: str) -> SandboxProfile:
     """Return the sandbox profile for *language*, falling back to DEFAULT_PROFILE."""
     return SANDBOX_PROFILES.get((language or "").lower(), DEFAULT_PROFILE)
+
+
+@dataclass(frozen=True)
+class LintProfile:
+    """Language-specific linter configuration for static analysis in containers."""
+
+    language: str
+    image: str          # e.g. maple-python-lint:3.12
+    command: list[str]  # command to run inside container
+
+
+LINT_PROFILES: dict[str, LintProfile] = {
+    "python": LintProfile(
+        language="python",
+        image="maple-python-lint:3.12",
+        command=["pylint", "--output-format=json", "--recursive=y", "."],
+    ),
+    "javascript": LintProfile(
+        language="javascript",
+        image="maple-node-lint:20",
+        command=["eslint", "--format=json", "."],
+    ),
+    "typescript": LintProfile(
+        language="typescript",
+        image="maple-node-lint:20",
+        command=["eslint", "--format=json", "."],
+    ),
+}
+
+
+def get_lint_profile(language: str) -> LintProfile | None:
+    """Return the lint profile for *language*, or None if unsupported."""
+    return LINT_PROFILES.get((language or "").lower())

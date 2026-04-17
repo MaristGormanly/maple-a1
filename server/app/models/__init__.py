@@ -4,6 +4,7 @@ from .assignment import Assignment
 from .rubric import Rubric
 from .submission import Submission
 from .evaluation_result import EvaluationResult
+from .style_guide_chunk import StyleGuideChunk
 
 __all__ = [
     "Base",
@@ -14,4 +15,5 @@ __all__ = [
     "Rubric",
     "Submission",
     "EvaluationResult",
+    "StyleGuideChunk",
 ]

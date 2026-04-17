@@ -666,4 +666,39 @@ Repeat for **`root`** and, if applicable, **`maple`**, depending on who should b
 |---------|------|---------|
 | 1.1.0 | 2026-04-08 | Added **Docker socket access** section: verify install, socket permissions, `maple` group membership, fix (`usermod -aG docker maple`), end-to-end test, and security note. |
 | 1.0.1 | 2026-04-01 | Removed **Open questions for Jayden** section. |
+| 1.2.0 | 2026-04-17 | Added **Sandbox Images — Linters** section: lint Dockerfiles, image tags, build commands, smoke-test commands, and production deployment notes for Milestone 3. |
+| 1.1.0 | 2026-04-08 | Added **Docker socket access** section: verify install, socket permissions, `maple` group membership, fix (`usermod -aG docker maple`), end-to-end test, and security note. |
+| 1.0.1 | 2026-04-01 | Removed **Open questions for Jayden** section. |
 | 1.0.0 | 2026-04-01 | Refactored guide structure; design vs production; local/schema/Jayden sections; pgvector and 4 GB/2 vCPU; App Platform not for Angular; Alembic deferred; document version table added. |
+
+---
+
+## Sandbox Images — Linters
+
+The following Docker images provide pre-installed, pinned linter tooling for static analysis in the Milestone 3 pipeline. Each image is built from a Dockerfile in `server/docker/lint/`.
+
+| Language | Image tag | Linter | Pinned version | Dockerfile |
+|----------|-----------|--------|----------------|------------|
+| Python | `maple-python-lint:3.12` | pylint | `3.2.7` | `server/docker/lint/Dockerfile.python` |
+| JavaScript | `maple-node-lint:20` | eslint | `9.10.0` | `server/docker/lint/Dockerfile.node` |
+| TypeScript | `maple-node-lint:20` | eslint | `9.10.0` | `server/docker/lint/Dockerfile.node` |
+
+### Building the images locally
+
+Run from the repo root:
+
+```bash
+docker build -t maple-python-lint:3.12 -f server/docker/lint/Dockerfile.python .
+docker build -t maple-node-lint:20 -f server/docker/lint/Dockerfile.node .
+```
+
+### Smoke-test pinned versions
+
+```bash
+docker run --rm maple-python-lint:3.12 pylint --version
+docker run --rm maple-node-lint:20 eslint --version
+```
+
+### Production deployment
+
+On the Droplet, build and tag these images before starting the service. The linter runner (`services/linter_runner.py`) references images by the tag names above; if the images are absent, `run_linter()` will raise a `DockerRunnerError` at runtime.

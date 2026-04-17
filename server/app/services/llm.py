@@ -8,10 +8,16 @@ Milestone 3 scope (stub only): complete() LLM call wrapper with retry,
 fallback, structured logging, and cost tracking per Architecture Guide §4.
 """
 
+import asyncio
+import json
+import logging
 import re
+import time
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+logger = logging.getLogger(__name__)
 
 _PATTERNS: list[tuple[str, re.Pattern, str]] = [
     ("github_pat", re.compile(r"gh[ps]_[A-Za-z0-9_]{36,}"), "[REDACTED_GITHUB_PAT]"),
@@ -70,16 +76,157 @@ class LLMResponse:
     latency_ms: int
 
 
+# ---------------------------------------------------------------------------
+# Model chain and provider dispatch
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ModelSpec:
+    name: str
+    provider: str
+
+
+MODEL_CHAIN: list[ModelSpec] = [
+    ModelSpec(name="gemini-3.1-pro-preview", provider="gemini"),
+    ModelSpec(name="gemini-3.1-flash-lite", provider="gemini"),
+    ModelSpec(name="gpt-4o", provider="openai"),
+]
+
+
+class ProviderError(Exception):
+    pass
+
+
+class EvaluationFailedError(Exception):
+    pass
+
+
+def _call_gemini(
+    spec: ModelSpec,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    temperature: float,
+) -> LLMResponse:
+    raise ProviderError("Gemini API not configured")
+
+
+def _call_openai(
+    spec: ModelSpec,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    temperature: float,
+) -> LLMResponse:
+    raise ProviderError("OpenAI API not configured")
+
+
+def _dispatch(
+    spec: ModelSpec,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    temperature: float,
+) -> LLMResponse:
+    if spec.provider == "gemini":
+        return _call_gemini(spec, system, messages, max_tokens, temperature)
+    if spec.provider == "openai":
+        return _call_openai(spec, system, messages, max_tokens, temperature)
+    raise ProviderError(f"Unknown provider: {spec.provider}")
+
+
 async def complete(
     system_prompt: str,
     messages: list[dict],
-    model: str,
+    *,
+    complexity: Literal["standard", "complex"] = "standard",
     max_tokens: int = 1024,
     temperature: float = 0.7,
 ) -> LLMResponse:
     """Send a completion request to the configured LLM provider.
 
-    Handles logging, retries with backoff, timeout, and error normalization.
-    Implementation deferred to Milestone 3.
+    Walks MODEL_CHAIN; each model gets LLM_MAX_RETRIES attempts with
+    exponential backoff. Raises EvaluationFailedError if all models
+    are exhausted.
     """
-    raise NotImplementedError("LLM call wrapper is Milestone 3 scope")
+    from server.app.config import settings
+
+    timeout = (
+        settings.LLM_TIMEOUT_COMPLEX
+        if complexity == "complex"
+        else settings.LLM_TIMEOUT_STANDARD
+    )
+    max_retries = settings.LLM_MAX_RETRIES
+    backoff_base = settings.LLM_BACKOFF_BASE
+
+    safe_system = redact(system_prompt)
+    safe_messages = [redact_dict(m) for m in messages]
+
+    for spec in MODEL_CHAIN:
+        for attempt in range(1, max_retries + 1):
+            t0 = time.monotonic()
+            try:
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _dispatch,
+                        spec, safe_system, safe_messages, max_tokens, temperature,
+                    ),
+                    timeout=timeout,
+                )
+                latency_ms = int((time.monotonic() - t0) * 1000)
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "llm_call",
+                            "model": spec.name,
+                            "attempt": attempt,
+                            "latency_ms": latency_ms,
+                            "input_tokens": response.usage.input_tokens,
+                            "output_tokens": response.usage.output_tokens,
+                            "status": "ok",
+                        }
+                    )
+                )
+                return LLMResponse(
+                    content=response.content,
+                    usage=response.usage,
+                    latency_ms=latency_ms,
+                )
+            except Exception as exc:
+                latency_ms = int((time.monotonic() - t0) * 1000)
+                error_type = type(exc).__name__
+                if attempt < max_retries:
+                    logger.warning(
+                        json.dumps(
+                            {
+                                "event": "llm_retry",
+                                "model": spec.name,
+                                "attempt": attempt,
+                                "latency_ms": latency_ms,
+                                "error_type": error_type,
+                                "status": "retry",
+                            }
+                        )
+                    )
+                    sleep_secs = backoff_base * (2 ** (attempt - 1))
+                    await asyncio.sleep(sleep_secs)
+                else:
+                    # Final attempt for this model also failed — log and move on.
+                    logger.warning(
+                        json.dumps(
+                            {
+                                "event": "llm_retry",
+                                "model": spec.name,
+                                "attempt": attempt,
+                                "latency_ms": latency_ms,
+                                "error_type": error_type,
+                                "status": "retry",
+                            }
+                        )
+                    )
+
+        logger.error(
+            json.dumps({"event": "llm_model_exhausted", "model": spec.name})
+        )
+
+    raise EvaluationFailedError("all LLM models exhausted retries")

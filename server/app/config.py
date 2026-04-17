@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # Default timeout (seconds) to wait for a container to finish before giving up.
     DOCKER_CONTAINER_TIMEOUT: int = 60
 
+    # --- LLM Configuration ---
+    GEMINI_API_KEY: str | None = None
+    OPENAI_API_KEY: str | None = None
+    LLM_TIMEOUT_STANDARD: int = 30
+    LLM_TIMEOUT_COMPLEX: int = 60
+    LLM_MAX_RETRIES: int = 2
+    LLM_BACKOFF_BASE: float = 1.0
+
     # --- CORS (Cross-Origin Resource Sharing) ---
     # Defines which frontend domains are allowed to make requests to this backend API.
     # Can be a single string (comma-separated) or a list of strings.
