@@ -22,7 +22,7 @@ from app.services.llm import (
 _FAKE_USAGE = LLMUsage(input_tokens=100, output_tokens=50, cost_usd=0.001)
 _FAKE_RESPONSE = LLMResponse(content="evaluation result", usage=_FAKE_USAGE, latency_ms=123)
 
-_SETTINGS_PATCH = "server.app.config.settings"
+_SETTINGS_PATCH = "app.services.llm.settings"
 _DISPATCH_PATCH = "app.services.llm._dispatch"
 _SLEEP_PATCH = "app.services.llm.asyncio.sleep"
 _WAIT_FOR_PATCH = "app.services.llm.asyncio.wait_for"
@@ -142,12 +142,14 @@ class TestCompleteTimeoutRespected(unittest.IsolatedAsyncioTestCase):
         mock_settings.LLM_TIMEOUT_STANDARD = 30
         mock_settings.LLM_TIMEOUT_COMPLEX = 60
 
-        # Patch wait_for to raise TimeoutError so all models time out.
-        with patch(_WAIT_FOR_PATCH, side_effect=asyncio.TimeoutError("timed out")):
+        async def fake_wait_for(coro, timeout):
+            coro.close()  # prevent ResourceWarning: coroutine never awaited
+            raise asyncio.TimeoutError("timed out")
+
+        with patch(_WAIT_FOR_PATCH, side_effect=fake_wait_for):
             with self.assertRaises(EvaluationFailedError):
                 await complete("system prompt", [{"role": "user", "content": "hello"}])
 
-        # Sleep should have been called for retries before final exhaustion.
         self.assertTrue(mock_sleep.called)
 
 

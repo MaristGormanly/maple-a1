@@ -17,6 +17,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from ..config import settings
+
 logger = logging.getLogger(__name__)
 
 _PATTERNS: list[tuple[str, re.Pattern, str]] = [
@@ -109,11 +111,10 @@ def _call_gemini(
     temperature: float,
 ) -> LLMResponse:
     from openai import OpenAI
-    from server.app.config import settings as _settings
-    if not _settings.GEMINI_API_KEY:
+    if not settings.GEMINI_API_KEY:
         raise ProviderError("GEMINI_API_KEY not configured")
     client = OpenAI(
-        api_key=_settings.GEMINI_API_KEY,
+        api_key=settings.GEMINI_API_KEY,
         base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
     )
     resp = client.chat.completions.create(
@@ -139,10 +140,9 @@ def _call_openai(
     temperature: float,
 ) -> LLMResponse:
     from openai import OpenAI
-    from server.app.config import settings as _settings
-    if not _settings.OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY:
         raise ProviderError("OPENAI_API_KEY not configured")
-    client = OpenAI(api_key=_settings.OPENAI_API_KEY)
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
     resp = client.chat.completions.create(
         model=spec.name,
         messages=[{"role": "system", "content": system}, *messages],
@@ -186,8 +186,6 @@ async def complete(
     exponential backoff. Raises EvaluationFailedError if all models
     are exhausted.
     """
-    from server.app.config import settings
-
     timeout = (
         settings.LLM_TIMEOUT_COMPLEX
         if complexity == "complex"

@@ -57,6 +57,8 @@ def _parse_violations(language: str, stdout: str) -> list[Violation]:
         if not isinstance(raw, list):
             return []
         for item in raw:
+            if not isinstance(item, dict):
+                continue
             try:
                 violations.append(
                     Violation(
@@ -76,11 +78,15 @@ def _parse_violations(language: str, stdout: str) -> list[Violation]:
             return []
         severity_map = {1: "warning", 2: "error"}
         for file_result in raw:
+            if not isinstance(file_result, dict):
+                continue
             file_path = file_result.get("filePath", "")
             messages = file_result.get("messages", [])
             if not isinstance(messages, list):
                 continue
             for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
                 try:
                     violations.append(
                         Violation(
