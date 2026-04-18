@@ -108,7 +108,27 @@ def _call_gemini(
     max_tokens: int,
     temperature: float,
 ) -> LLMResponse:
-    raise ProviderError("Gemini API not configured")
+    from openai import OpenAI
+    from server.app.config import settings as _settings
+    if not _settings.GEMINI_API_KEY:
+        raise ProviderError("GEMINI_API_KEY not configured")
+    client = OpenAI(
+        api_key=_settings.GEMINI_API_KEY,
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
+    resp = client.chat.completions.create(
+        model=spec.name,
+        messages=[{"role": "system", "content": system}, *messages],
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    content = resp.choices[0].message.content or ""
+    usage = LLMUsage(
+        input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+        output_tokens=resp.usage.completion_tokens if resp.usage else 0,
+        cost_usd=0.0,
+    )
+    return LLMResponse(content=content, usage=usage, latency_ms=0)
 
 
 def _call_openai(
@@ -118,7 +138,24 @@ def _call_openai(
     max_tokens: int,
     temperature: float,
 ) -> LLMResponse:
-    raise ProviderError("OpenAI API not configured")
+    from openai import OpenAI
+    from server.app.config import settings as _settings
+    if not _settings.OPENAI_API_KEY:
+        raise ProviderError("OPENAI_API_KEY not configured")
+    client = OpenAI(api_key=_settings.OPENAI_API_KEY)
+    resp = client.chat.completions.create(
+        model=spec.name,
+        messages=[{"role": "system", "content": system}, *messages],
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    content = resp.choices[0].message.content or ""
+    usage = LLMUsage(
+        input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
+        output_tokens=resp.usage.completion_tokens if resp.usage else 0,
+        cost_usd=0.0,
+    )
+    return LLMResponse(content=content, usage=usage, latency_ms=0)
 
 
 def _dispatch(

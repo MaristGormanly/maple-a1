@@ -35,11 +35,11 @@ def _make_batch_response(items: list[tuple[int, list[float]]]) -> MagicMock:
     return mock_resp
 
 
-class TestEmbedTextReturns3072Floats(unittest.TestCase):
-    """embed_text() should return a list of exactly 3072 floats on success."""
+class TestEmbedTextReturns1536Floats(unittest.TestCase):
+    """embed_text() should return a list of exactly 1536 floats on success."""
 
-    def test_embed_text_returns_3072_floats(self):
-        fake_embedding = [0.1] * 3072
+    def test_embed_text_returns_1536_floats(self):
+        fake_embedding = [0.1] * 1536
         mock_resp = _make_response(fake_embedding)
 
         async def _run():
@@ -50,7 +50,7 @@ class TestEmbedTextReturns3072Floats(unittest.TestCase):
 
         result = asyncio.run(_run())
 
-        self.assertEqual(len(result), 3072)
+        self.assertEqual(len(result), 1536)
         self.assertAlmostEqual(result[0], 0.1)
 
 
@@ -71,9 +71,9 @@ class TestEmbedBatchSortsByIndex(unittest.TestCase):
     """embed_batch() returns embeddings in index order even if the API returns them out of order."""
 
     def test_embed_batch_sorts_by_index(self):
-        emb_0 = [0.1] * 3072
-        emb_1 = [0.2] * 3072
-        emb_2 = [0.3] * 3072
+        emb_0 = [0.1] * 1536
+        emb_1 = [0.2] * 1536
+        emb_2 = [0.3] * 1536
 
         # Return index=2 first, then index=0, then index=1 (deliberately scrambled).
         mock_resp = _make_batch_response([(2, emb_2), (0, emb_0), (1, emb_1)])

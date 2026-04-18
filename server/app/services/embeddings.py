@@ -1,6 +1,7 @@
 """
 OpenAI embedding client for MAPLE A1 RAG pipeline.
-Calls text-embedding-3-large (3072 dims) per docs/design-doc.md §8.
+Calls text-embedding-3-large with dimensions=1536 (Matryoshka truncation),
+fitting within pgvector's HNSW index cap of 2000 dims.
 """
 
 import httpx
@@ -23,7 +24,7 @@ async def embed_text(text: str) -> list[float]:
                 "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={"model": "text-embedding-3-large", "input": text},
+            json={"model": "text-embedding-3-large", "input": text, "dimensions": 1536},
             timeout=30.0,
         )
         response.raise_for_status()
@@ -41,7 +42,7 @@ async def embed_batch(texts: list[str]) -> list[list[float]]:
                 "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json={"model": "text-embedding-3-large", "input": texts},
+            json={"model": "text-embedding-3-large", "input": texts, "dimensions": 1536},
             timeout=60.0,
         )
         response.raise_for_status()

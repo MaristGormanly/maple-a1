@@ -22,4 +22,4 @@ class StyleGuideChunk(Base):
     rule_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_fetched: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list | None] = mapped_column(Vector(3072), nullable=True)
+    embedding: Mapped[list | None] = mapped_column(Vector(1536), nullable=True)
