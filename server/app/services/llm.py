@@ -103,6 +103,9 @@ class EvaluationFailedError(Exception):
     pass
 
 
+_GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
 def _call_gemini(
     spec: ModelSpec,
     system: str,
@@ -110,23 +113,53 @@ def _call_gemini(
     max_tokens: int,
     temperature: float,
 ) -> LLMResponse:
-    from openai import OpenAI
+    import httpx
     if not settings.GEMINI_API_KEY:
         raise ProviderError("GEMINI_API_KEY not configured")
-    client = OpenAI(
-        api_key=settings.GEMINI_API_KEY,
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    )
-    resp = client.chat.completions.create(
-        model=spec.name,
-        messages=[{"role": "system", "content": system}, *messages],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    content = resp.choices[0].message.content or ""
+
+    contents = []
+    for m in messages:
+        role = "model" if m.get("role") == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
+
+    body: dict[str, Any] = {
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+        },
+    }
+    if system:
+        body["systemInstruction"] = {"parts": [{"text": system}]}
+
+    url = f"{_GEMINI_NATIVE_BASE}/{spec.name}:generateContent"
+    try:
+        resp = httpx.post(
+            url,
+            headers={
+                "x-goog-api-key": settings.GEMINI_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=30,
+        )
+    except httpx.RequestError as exc:
+        raise ProviderError(f"gemini request failed: {exc}") from exc
+
+    if resp.status_code != 200:
+        raise ProviderError(f"gemini {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise ProviderError("gemini returned no candidates")
+    parts = candidates[0].get("content", {}).get("parts") or []
+    content = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+
+    usage_md = data.get("usageMetadata", {})
     usage = LLMUsage(
-        input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
-        output_tokens=resp.usage.completion_tokens if resp.usage else 0,
+        input_tokens=usage_md.get("promptTokenCount", 0),
+        output_tokens=usage_md.get("candidatesTokenCount", 0),
         cost_usd=0.0,
     )
     return LLMResponse(content=content, usage=usage, latency_ms=0)

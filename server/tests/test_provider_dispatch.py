@@ -150,30 +150,100 @@ class TestCallGeminiNoKey(unittest.TestCase):
             _call_gemini(_SPEC_GEMINI, "sys", [], 512, 0.7)
 
 
-class TestCallGeminiSuccess(unittest.TestCase):
-    """_call_gemini uses OpenAI-compatible Gemini endpoint and returns LLMResponse."""
+def _make_gemini_response(text="ok", prompt_tokens=10, candidates_tokens=5, status_code=200):
+    """Build a fake httpx.Response for the native Gemini generateContent endpoint."""
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    resp.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": text}], "role": "model"}}],
+        "usageMetadata": {
+            "promptTokenCount": prompt_tokens,
+            "candidatesTokenCount": candidates_tokens,
+            "totalTokenCount": prompt_tokens + candidates_tokens,
+        },
+    }
+    return resp
 
-    @patch(_OPENAI_PATCH)
+
+_HTTPX_POST = "httpx.post"
+
+
+class TestCallGeminiSuccess(unittest.TestCase):
+    """_call_gemini hits the native Gemini generateContent endpoint."""
+
+    @patch(_HTTPX_POST)
     @patch(_SETTINGS_PATCH)
-    def test_uses_gemini_base_url(self, mock_settings, MockOpenAI):
+    def test_uses_native_endpoint_url(self, mock_settings, mock_post):
         mock_settings.GEMINI_API_KEY = "gemini-key"
-        mock_client = MagicMock()
-        MockOpenAI.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _make_openai_response()
+        mock_post.return_value = _make_gemini_response()
 
         _call_gemini(_SPEC_GEMINI, "sys", [], 512, 0.7)
 
-        init_kwargs = MockOpenAI.call_args.kwargs
-        self.assertIn("generativelanguage.googleapis.com", init_kwargs.get("base_url", ""))
+        url = mock_post.call_args.args[0]
+        self.assertIn("generativelanguage.googleapis.com", url)
+        self.assertIn(":generateContent", url)
+        self.assertIn(_SPEC_GEMINI.name, url)
 
-    @patch(_OPENAI_PATCH)
+    @patch(_HTTPX_POST)
     @patch(_SETTINGS_PATCH)
-    def test_returns_llm_response(self, mock_settings, MockOpenAI):
-        mock_settings.GEMINI_API_KEY = "gemini-key"
-        mock_client = MagicMock()
-        MockOpenAI.return_value = mock_client
-        mock_client.chat.completions.create.return_value = _make_openai_response(
-            content="gemini says hi", prompt_tokens=15, completion_tokens=3
+    def test_uses_x_goog_api_key_header(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "gemini-key-xyz"
+        mock_post.return_value = _make_gemini_response()
+
+        _call_gemini(_SPEC_GEMINI, "sys", [], 512, 0.7)
+
+        headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(headers.get("x-goog-api-key"), "gemini-key-xyz")
+        self.assertNotIn("Authorization", headers)
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_system_prompt_in_systemInstruction(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        mock_post.return_value = _make_gemini_response()
+
+        _call_gemini(_SPEC_GEMINI, "be helpful", [{"role": "user", "content": "hi"}], 32, 0.5)
+
+        body = mock_post.call_args.kwargs["json"]
+        self.assertEqual(body["systemInstruction"]["parts"][0]["text"], "be helpful")
+        self.assertEqual(body["contents"][0]["role"], "user")
+        self.assertEqual(body["contents"][0]["parts"][0]["text"], "hi")
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_assistant_role_mapped_to_model(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        mock_post.return_value = _make_gemini_response()
+
+        _call_gemini(
+            _SPEC_GEMINI, "",
+            [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}],
+            32, 0.5,
+        )
+
+        body = mock_post.call_args.kwargs["json"]
+        self.assertEqual(body["contents"][0]["role"], "user")
+        self.assertEqual(body["contents"][1]["role"], "model")
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_generation_config_passed(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        mock_post.return_value = _make_gemini_response()
+
+        _call_gemini(_SPEC_GEMINI, "", [], 256, 0.3)
+
+        cfg = mock_post.call_args.kwargs["json"]["generationConfig"]
+        self.assertEqual(cfg["maxOutputTokens"], 256)
+        self.assertEqual(cfg["temperature"], 0.3)
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_returns_llm_response(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        mock_post.return_value = _make_gemini_response(
+            text="gemini says hi", prompt_tokens=15, candidates_tokens=3
         )
 
         result = _call_gemini(_SPEC_GEMINI, "sys", [], 512, 0.7)
@@ -181,6 +251,28 @@ class TestCallGeminiSuccess(unittest.TestCase):
         self.assertEqual(result.content, "gemini says hi")
         self.assertEqual(result.usage.input_tokens, 15)
         self.assertEqual(result.usage.output_tokens, 3)
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_non_200_raises_provider_error(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        mock_post.return_value = _make_gemini_response(status_code=429, text="quota exceeded")
+
+        with self.assertRaises(ProviderError) as ctx:
+            _call_gemini(_SPEC_GEMINI, "sys", [], 32, 0.5)
+        self.assertIn("429", str(ctx.exception))
+
+    @patch(_HTTPX_POST)
+    @patch(_SETTINGS_PATCH)
+    def test_empty_candidates_raises_provider_error(self, mock_settings, mock_post):
+        mock_settings.GEMINI_API_KEY = "k"
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"candidates": []}
+        mock_post.return_value = resp
+
+        with self.assertRaises(ProviderError):
+            _call_gemini(_SPEC_GEMINI, "sys", [], 32, 0.5)
 
 
 class TestDispatchRouting(unittest.TestCase):
