@@ -33,6 +33,20 @@
           <span>{{ statusData.evaluation.deterministic_score ?? '—' }}</span>
         </div>
 
+        @if (languageInfo) {
+          <div class="row">
+            <span class="label">Language</span>
+            <span class="mono">{{ languageInfo.language }}{{ languageInfo.version ? ' ' + languageInfo.version : '' }}{{ languageInfo.override_applied ? ' (override)' : '' }}</span>
+          </div>
+        }
+
+        @if (styleGuideVersions.length > 0) {
+          <div class="row">
+            <span class="label">Style guide</span>
+            <span class="mono">{{ styleGuideVersions.join(', ') }}</span>
+          </div>
+        }
+
         @if (testSummary) {
           <div class="row">
             <span class="label">Tests run</span>

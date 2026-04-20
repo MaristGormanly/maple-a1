@@ -106,6 +106,16 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     return this.statusData?.evaluation?.ai_feedback?.recommendations ?? [];
   }
 
+  get languageInfo(): LanguageInfo | null {
+    return this.statusData?.evaluation?.metadata?.language ?? null;
+  }
+
+  get styleGuideVersions(): string[] {
+    const v = this.statusData?.evaluation?.ai_feedback?.metadata?.style_guide_version;
+    if (!v) return [];
+    return Array.isArray(v) ? v : [v];
+  }
+
   get showReviewPanel(): boolean {
     return (
       this.statusData?.status === 'Awaiting Review' &&
