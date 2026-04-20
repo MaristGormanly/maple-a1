@@ -1,0 +1,39 @@
+@if (fileGroups.length > 0) {
+  <div class="diff-section">
+    <p class="diff-section-heading">Recommendations</p>
+
+    @for (group of fileGroups; track group.filePath) {
+      <div class="file-group">
+        <div class="file-header">
+          <span class="file-path">{{ group.filePath }}</span>
+        </div>
+
+        @for (entry of group.items; track entry.rec.line_range.start) {
+          <div class="rec-block">
+            <div class="rec-meta">
+              <span class="line-range">
+                Lines {{ entry.rec.line_range.start }}–{{ entry.rec.line_range.end }}
+              </span>
+              @if (entry.rec.rationale) {
+                <span class="rationale">{{ entry.rec.rationale }}</span>
+              }
+            </div>
+
+            <table class="diff-table" aria-label="Code diff for {{ group.filePath }}">
+              <tbody>
+                @for (line of entry.parsedDiff; track $index) {
+                  <tr [ngClass]="lineClass(line.type)">
+                    <td class="diff-gutter" [ngClass]="gutterClass(line.type)" aria-hidden="true">
+                      {{ gutterSymbol(line.type) }}
+                    </td>
+                    <td class="diff-content">{{ line.content }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  </div>
+}

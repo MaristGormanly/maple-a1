@@ -156,3 +156,27 @@ No gaps. Subagent noted one beneficial improvement over the spec: correctly pres
 **No changes to `pipeline.py` or `test_parser.py`** — both were already spec-compliant. The only broken link was the runner returning `-1` instead of `124`.
 
 **Verification:** `pytest server/tests/test_docker_runner.py -v` — all 7 tests pass.
+
+---
+
+### 2026-04-14 — Task 6: Log Normalization (Circular Buffer)
+
+**Task:** Implement log normalization using a circular buffer: retain the first 2 KB and last 5 KB of the execution trace; discard the middle to prevent context bloat.
+
+**What shipped:**
+- **`server/app/services/log_normalizer.py`** (new file) — Pure `normalize_logs(text: str) -> str` function.
+  - Constants: `HEAD_BYTES = 2048`, `TAIL_BYTES = 5120` (spec-mandated sizes).
+  - Operates at the **byte level** (UTF-8 encoding) — the spec's "2 KB / 5 KB" refers to bytes, not characters; multi-byte safety via `errors="replace"` at both cut points.
+  - Returns input unchanged when `len(encoded) <= HEAD_BYTES + TAIL_BYTES`.
+  - When over limit: `head + "\n... [N bytes omitted] ...\n" + tail`. The separator makes truncation visible to the parser and any downstream LLM.
+- **`server/app/services/docker_client.py`** — 3-line change in `run_container`: applies `normalize_logs` to `result.stdout` and `result.stderr` independently before building the public `ContainerResult`. Normalization is per-stream so each stream preserves its own head and tail context.
+- **`server/tests/test_log_normalizer.py`** (new file) — 16 tests across 4 classes:
+  - `TestNormalizeLogsNoTruncation` — empty, single char, short, exactly at limit, one byte under.
+  - `TestNormalizeLogsTruncation` — one byte over, separator present, head preserved, tail preserved, middle discarded, correct omitted count, 1 MB stress.
+  - `TestNormalizeLogsMultibyte` — `€` (3-byte) and emoji (4-byte) chars at cut points; no decode errors; result re-encodes cleanly.
+  - `TestNormalizeLogsIntegration` — patches `_docker_run` to return oversized logs and verifies the bridge applies truncation; also verifies short logs pass through unchanged.
+
+**Why applied in `docker_client.py` (not `pipeline.py` or `test_parser.py`):**
+The public `ContainerResult` is the boundary between the Docker runtime layer (Jayden) and the pipeline/parser layer (Dom). Normalizing here means Dom's `parse_test_results` always receives bounded input without knowing about truncation — it remains a pure parser. Applying it in `pipeline.py` would mix concerns; applying it inside `test_parser.py` would violate its "pure function, no infrastructure" contract.
+
+**Verification:** `pytest server/tests/test_log_normalizer.py server/tests/test_docker_client.py server/tests/test_docker_runner.py -v` — 34 passed, 4 subtests passed, 0 failed.
