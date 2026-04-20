@@ -3,7 +3,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
-import { SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
+import { ReviewRequest, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
 
 @Injectable({ providedIn: 'root' })
 export class EvaluationService {
@@ -56,6 +56,37 @@ export class EvaluationService {
     });
     return this.http
       .get<SubmissionStatusResponse>(`${this.submissionsUrl}/${submissionId}`, { headers })
+      .pipe(
+        catchError((err) => {
+          const message: string =
+            err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+          const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+          const response: SubmissionStatusResponse = {
+            success: false,
+            data: null,
+            error: { code, message },
+            metadata: {
+              timestamp: new Date().toISOString(),
+              module: 'a1',
+              version: 'unknown',
+            },
+          };
+          return of(response);
+        })
+      );
+  }
+
+  submitReview(submissionId: string, request: ReviewRequest): Observable<SubmissionStatusResponse> {
+    const headers = new HttpHeaders({
+      Authorization: `Bearer ${environment.devToken ?? ''}`,
+      'Content-Type': 'application/json',
+    });
+    return this.http
+      .post<SubmissionStatusResponse>(
+        `${this.submissionsUrl}/${submissionId}/review`,
+        request,
+        { headers }
+      )
       .pipe(
         catchError((err) => {
           const message: string =

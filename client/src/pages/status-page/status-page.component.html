@@ -66,12 +66,71 @@
           </div>
         }
 
-        @if (statusData.evaluation.ai_feedback?.summary) {
-          <div class="row row--block">
-            <span class="label">Feedback</span>
-            <p class="ai-feedback">{{ statusData.evaluation.ai_feedback!.summary }}</p>
+        @if (showReviewPanel) {
+          <div class="review-panel">
+            <p class="review-panel__heading">Instructor Review</p>
+            <p class="review-panel__hint">AI feedback is pending your approval before it is released to the student.</p>
+
+            @if (reviewError) {
+              <p class="error-banner" role="alert">{{ reviewError }}</p>
+            }
+
+            @if (!showRejectInput) {
+              <div class="review-panel__actions">
+                <button
+                  class="btn btn--approve"
+                  [disabled]="reviewSubmitting"
+                  (click)="onApprove()"
+                >
+                  {{ reviewSubmitting ? 'Saving…' : 'Approve' }}
+                </button>
+                <button
+                  class="btn btn--reject"
+                  [disabled]="reviewSubmitting"
+                  (click)="onRejectOpen()"
+                >
+                  Reject
+                </button>
+              </div>
+            } @else {
+              <div class="review-panel__reject-form">
+                <label class="label" for="rejectNotes">Rejection notes (optional)</label>
+                <textarea
+                  id="rejectNotes"
+                  #rejectNotes
+                  class="review-panel__textarea"
+                  placeholder="Explain what needs correction…"
+                  rows="4"
+                ></textarea>
+                <div class="review-panel__actions">
+                  <button
+                    class="btn btn--reject"
+                    [disabled]="reviewSubmitting"
+                    (click)="onRejectSubmit(rejectNotes.value)"
+                  >
+                    {{ reviewSubmitting ? 'Saving…' : 'Submit Rejection' }}
+                  </button>
+                  <button
+                    class="btn btn--secondary"
+                    [disabled]="reviewSubmitting"
+                    (click)="showRejectInput = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            }
           </div>
         }
+
+        @if (criteriaScores.length > 0) {
+          <div class="row row--block">
+            <span class="label">AI Feedback</span>
+          </div>
+          <app-criteria-scores [criteriaScores]="criteriaScores" />
+        }
+
+        <app-diff-viewer [recommendations]="recommendations" />
       </div>
     }
 

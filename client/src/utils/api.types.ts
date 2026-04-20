@@ -23,9 +23,45 @@ export interface LanguageInfo {
   override_applied: boolean;
 }
 
+export type ScoreLevel =
+  | 'Exemplary'
+  | 'Proficient'
+  | 'Developing'
+  | 'Beginning'
+  | 'NEEDS_HUMAN_REVIEW';
+
+export interface RecommendationObject {
+  file_path: string;
+  line_range: { start: number; end: number };
+  original_snippet: string;
+  revised_snippet: string;
+  diff: string;
+  rationale?: string;
+}
+
+export interface CriterionScore {
+  criterion_name: string;
+  score: number;
+  level: ScoreLevel;
+  justification: string;
+  confidence: number;
+  recommendation?: RecommendationObject;
+}
+
+export interface AiFeedback {
+  criteria_scores: CriterionScore[];
+  flags: string[];
+  metadata: {
+    style_guide_version?: string | string[];
+    language?: string;
+  };
+  recommendations: RecommendationObject[];
+}
+
 export interface EvaluationResult {
   deterministic_score: number | null;
-  ai_feedback: { summary?: string } | null;
+  review_status?: string;
+  ai_feedback?: AiFeedback | null;
   metadata?: {
     language: LanguageInfo | null;
     test_summary: TestSummary | null;
@@ -67,4 +103,9 @@ export interface SubmissionResponse {
   data: SubmissionData | null;
   error: ApiError | null;
   metadata: ResponseMetadata;
+}
+
+export interface ReviewRequest {
+  action: 'approve' | 'reject';
+  instructor_notes?: string;
 }
