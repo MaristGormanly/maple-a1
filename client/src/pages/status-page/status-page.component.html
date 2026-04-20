@@ -1,0 +1,198 @@
+@if (statusData) {
+  <div class="status-card">
+    <p class="submission-id">{{ statusData.submission_id }}</p>
+
+    <div class="row">
+      <span class="label">Status</span>
+      <span class="badge" [class.badge--green]="statusData.status === 'cloned' || statusData.status === 'cached' || statusData.status === 'Completed'">
+        {{ statusData.status }}
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="label">GitHub URL</span>
+      <span>{{ statusData.github_repo_url }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Assignment ID</span>
+      <span>{{ statusData.assignment_id ?? 'None' }}</span>
+    </div>
+
+    @if (statusData.commit_hash) {
+      <div class="row">
+        <span class="label">Commit</span>
+        <span class="mono">{{ abbrev(statusData.commit_hash) }}</span>
+      </div>
+    }
+
+    @if (statusData.evaluation) {
+      <div class="evaluation-panel">
+        <div class="row">
+          <span class="label">Score</span>
+          <span>{{ statusData.evaluation.deterministic_score ?? '—' }}</span>
+        </div>
+
+        @if (languageInfo) {
+          <div class="row">
+            <span class="label">Language</span>
+            <span class="mono">{{ languageInfo.language }}{{ languageInfo.version ? ' ' + languageInfo.version : '' }}{{ languageInfo.override_applied ? ' (override)' : '' }}</span>
+          </div>
+        }
+
+        @if (styleGuideVersions.length > 0) {
+          <div class="row">
+            <span class="label">Style guide</span>
+            <span class="mono">{{ styleGuideVersions.join(', ') }}</span>
+          </div>
+        }
+
+        @if (testSummary) {
+          <div class="row">
+            <span class="label">Tests run</span>
+            <span>{{ totalTests }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Passed</span>
+            <span class="badge badge--green">{{ testSummary.passed }}</span>
+          </div>
+          @if (testSummary.failed > 0) {
+            <div class="row">
+              <span class="label">Failed</span>
+              <span class="badge badge--red">{{ testSummary.failed }}</span>
+            </div>
+          }
+          @if (testSummary.errors > 0) {
+            <div class="row">
+              <span class="label">Errors</span>
+              <span class="badge badge--red">{{ testSummary.errors }}</span>
+            </div>
+          }
+          @if (testSummary.skipped > 0) {
+            <div class="row">
+              <span class="label">Skipped</span>
+              <span>{{ testSummary.skipped }}</span>
+            </div>
+          }
+          <div class="row">
+            <span class="label">Framework</span>
+            <span class="mono">{{ testSummary.framework }}</span>
+          </div>
+        }
+
+        @if (showReviewPanel) {
+          <div class="review-panel">
+            <p class="review-panel__heading">Instructor Review</p>
+            <p class="review-panel__hint">AI feedback is pending your approval before it is released to the student.</p>
+
+            @if (reviewError) {
+              <p class="error-banner" role="alert">{{ reviewError }}</p>
+            }
+
+            @if (!showRejectInput) {
+              <div class="review-panel__actions">
+                <button
+                  class="btn btn--approve"
+                  [disabled]="reviewSubmitting"
+                  (click)="onApprove()"
+                >
+                  {{ reviewSubmitting ? 'Saving…' : 'Approve' }}
+                </button>
+                <button
+                  class="btn btn--reject"
+                  [disabled]="reviewSubmitting"
+                  (click)="onRejectOpen()"
+                >
+                  Reject
+                </button>
+              </div>
+            } @else {
+              <div class="review-panel__reject-form">
+                <label class="label" for="rejectNotes">Rejection notes (optional)</label>
+                <textarea
+                  id="rejectNotes"
+                  #rejectNotes
+                  class="review-panel__textarea"
+                  placeholder="Explain what needs correction…"
+                  rows="4"
+                ></textarea>
+                <div class="review-panel__actions">
+                  <button
+                    class="btn btn--reject"
+                    [disabled]="reviewSubmitting"
+                    (click)="onRejectSubmit(rejectNotes.value)"
+                  >
+                    {{ reviewSubmitting ? 'Saving…' : 'Submit Rejection' }}
+                  </button>
+                  <button
+                    class="btn btn--secondary"
+                    [disabled]="reviewSubmitting"
+                    (click)="showRejectInput = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @if (criteriaScores.length > 0) {
+          <div class="row row--block">
+            <span class="label">AI Feedback</span>
+          </div>
+          <app-criteria-scores [criteriaScores]="criteriaScores" />
+        }
+
+        <app-diff-viewer [recommendations]="recommendations" />
+      </div>
+    }
+
+    <a routerLink="/submit">Submit another</a>
+  </div>
+} @else if (data) {
+  <!-- Fallback: render M1 POST /evaluate response while the first poll loads -->
+  <div class="status-card">
+    <p class="submission-id">{{ data.submission_id }}</p>
+
+    <div class="row">
+      <span class="label">Status</span>
+      <span class="badge" [class.badge--green]="data.status === 'cloned' || data.status === 'cached'">
+        {{ data.status }}
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="label">GitHub URL</span>
+      <span>{{ data.github_url }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Assignment ID</span>
+      <span>{{ data.assignment_id ?? 'None' }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Commit</span>
+      <span class="mono">{{ abbrev(data.commit_hash) }}</span>
+    </div>
+
+    <div class="row">
+      <span class="label">Rubric digest</span>
+      <span class="mono">{{ abbrev(data.rubric_digest) }}</span>
+    </div>
+
+    <a routerLink="/submit">Submit another</a>
+  </div>
+} @else {
+  <div class="status-card">
+    @if (pollError) {
+      <p class="error-banner" role="alert">{{ pollError }}</p>
+    } @else if (submissionId) {
+      <p>Loading submission <strong>{{ submissionId }}</strong>…</p>
+    } @else {
+      <p>No submission data found. Please <a routerLink="/submit">submit a repository</a> to begin.</p>
+    }
+    <a routerLink="/submit">Submit another</a>
+  </div>
+}

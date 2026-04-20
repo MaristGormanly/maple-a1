@@ -1,0 +1,34 @@
+@if (criteriaScores.length > 0) {
+  <div class="criteria-list">
+    @for (criterion of criteriaScores; track criterion.criterion_name) {
+      <div class="criterion" [class.criterion--review]="isNeedsReview(criterion)">
+        <div class="criterion-header">
+          <span class="criterion-name">{{ criterion.criterion_name }}</span>
+          <div class="criterion-badges">
+            <span class="score">{{ criterion.score }}<small>/100</small></span>
+            <span class="level-badge" [ngClass]="levelClass(criterion.level)">
+              {{ levelLabel(criterion.level) }}
+            </span>
+            @if (isNeedsReview(criterion)) {
+              <span class="review-flag">Needs Human Review</span>
+            }
+          </div>
+        </div>
+
+        <p class="justification">{{ criterion.justification }}</p>
+
+        <div class="confidence-row">
+          <span>Confidence</span>
+          <div class="confidence-bar-track">
+            <div
+              class="confidence-bar-fill"
+              [ngClass]="confidenceBarClass(criterion.confidence)"
+              [style.width.%]="confidencePct(criterion.confidence)"
+            ></div>
+          </div>
+          <span>{{ confidencePct(criterion.confidence) }}%</span>
+        </div>
+      </div>
+    }
+  </div>
+}

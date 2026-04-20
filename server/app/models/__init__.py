@@ -1,9 +1,10 @@
-from server.app.models.database import Base, get_db, async_session_maker
-from server.app.models.user import User
-from server.app.models.assignment import Assignment
-from server.app.models.rubric import Rubric
-from server.app.models.submission import Submission
-from server.app.models.evaluation_result import EvaluationResult
+from .database import Base, get_db, async_session_maker
+from .user import User
+from .assignment import Assignment
+from .rubric import Rubric
+from .submission import Submission
+from .evaluation_result import EvaluationResult
+from .style_guide_chunk import StyleGuideChunk
 
 __all__ = [
     "Base",
@@ -14,4 +15,5 @@ __all__ = [
     "Rubric",
     "Submission",
     "EvaluationResult",
+    "StyleGuideChunk",
 ]

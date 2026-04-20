@@ -96,7 +96,7 @@ flowchart LR
 
 ### Component Descriptions
 
-- **Frontend Interface (Angular):** The user-facing application serves as the primary dashboard for both faculty and students. Faculty use it to configure assignments and import standardized JSON rubrics (compatible with the A5 Rubric Engine). Students and graders use it to submit GitHub repository links. The Angular client polls the backend for asynchronous grading updates and renders the final structured JSON feedback into an intuitive, human-readable format.
+- **Frontend Interface (Angular):** The user-facing application serves as the primary dashboard for both faculty and students. Faculty use it to configure assignments and review teacher-supplied rubrics alongside student code submissions. Students and graders use it to submit GitHub repository links. The Angular client polls the backend for asynchronous grading updates and renders the final structured JSON feedback into an intuitive, human-readable format. Internal style-guide standards remain a separate backend concern from the external rubric text supplied at review time.
 
 - **Orchestration Backend (Python/FastAPI):** Acting as the central nervous system, this monolithic Python service exposes RESTful API endpoints, manages database transactions, and coordinates the entire grading lifecycle. FastAPI was chosen for its native asynchronous capabilities, which are essential when managing long-running tasks like cloning repositories, running tests, and awaiting LLM generations.
 
@@ -115,27 +115,30 @@ The backend exposes several key RESTful endpoints to facilitate the module's pri
 #### `POST /api/v1/code-eval/evaluate`
 
 - **Purpose:** Triggers the asynchronous grading pipeline for a student's code.
-- **Request Format:** JSON containing submission details, assignment, rubric, and options (including `enable_lint_review`).
-```json
-{
-  "submission_id": "sub_def456",
-  "github_url": "https://github.com/student/assignment-1",
-  "assignment_id": "asgn_abc123",
-  "rubric_id": "rubric_ghi789",
-  "options": {
-    "language": "python",
-    "provide_feedback": true,
-    "enable_lint_review": true
-  }
-}
+- **Request Format:** `multipart/form-data` with the following fields:
+  - `github_url` (string, required) — the student's HTTPS GitHub repository URL
+  - `assignment_id` (string, required) — the assignment UUID
+  - `rubric` (file, required) — a UTF-8 encoded text or JSON file containing the rubric content
 ```
-- **Response Format:** JSON returning a generated `submission_id` and `status: "processing"`, wrapped in the MAPLE Standard Response Envelope.
+POST /api/v1/code-eval/evaluate
+Content-Type: multipart/form-data
+
+github_url=https://github.com/student/assignment-1
+assignment_id=asgn_abc123
+rubric=<rubric file upload>
+```
+- **Response Format:** For the current Milestone 1 ingestion flow, JSON returns a server-generated `submission_id`, the resolved `commit_hash`, the normalized `rubric_digest`, the processed local repository path, and a status such as `"cloned"` or `"cached"`, wrapped in the MAPLE Standard Response Envelope.
 ```json
 {
   "success": true,
   "data": {
     "submission_id": "sub_def456",
-    "status": "processing"
+    "github_url": "https://github.com/student/assignment-1",
+    "assignment_id": "asgn_abc123",
+    "rubric_digest": "671645837593b2bf77542e91add6f3bcb47919cf6218a7697220cccac81195b4",
+    "status": "cloned",
+    "local_repo_path": "data/raw/student-assignment-1-abc123-2a41db5b",
+    "commit_hash": "abc123def456"
   },
   "error": null,
   "metadata": {
@@ -154,7 +157,7 @@ The backend exposes several key RESTful endpoints to facilitate the module's pri
 
 #### `POST /api/v1/code-eval/rubrics`
 
-- **Purpose:** Allows faculty or the A5 Rubric Engine module to load grading criteria into the system.
+- **Purpose:** Optional future endpoint for faculty or the A5 Rubric Engine module to persist standardized rubric templates. This is separate from the live teacher-supplied rubric payload accepted by `POST /api/v1/code-eval/evaluate`.
 - **Request Format:** JSON matching the standardized A5 schema (`rubric_id`, `criteria`, `levels`).
 - **Response Format:** JSON confirming successful ingestion and validation, wrapped in the MAPLE Standard Response Envelope.
 
@@ -164,7 +167,7 @@ The PostgreSQL database persists the following core entities and relationships:
 
 - **User:** Represents users of the system. Contains `id` (UUID), `email`, `role` (enum: `Student`, `Instructor`), `github_username`, `github_pat_hash` (hashed, never plaintext), `created_at`, `updated_at`.
 
-- **Assignment:** Represents a specific homework task. Contains `id`, `title`, `instructor_id` (references `User`), `test_suite_repo_url` (pointing to the secure instructor test code), a foreign key linking to a `rubric_id`, `enable_lint_review` (boolean toggle), and `language_override` (string or null, where null uses repo-detected version).
+- **Assignment:** Represents a specific homework task. Contains `id`, `title`, `instructor_id` (references `User`), `test_suite_repo_url` (pointing to the secure instructor test code), `enable_lint_review` (boolean toggle), and `language_override` (string or null, where null uses repo-detected version). Assignment metadata may be reused during review, but the evaluation request still carries the teacher-supplied rubric content that should govern scoring for that run.
 
 - **Rubric:** Stores the grading criteria. Contains `id`, `assignment_id`, and `schema_json`. The `schema_json` field stores the exact JSON structure required by the MAPLE standard, ensuring seamless interoperability with the A5 module.
 
@@ -184,19 +187,19 @@ The A1 Code Evaluation pipeline is engineered as a **Deterministic-Probabilistic
 
 ### I. Data Acquisition & Secure Ingestion
 
-The tool utilizes a multi-source input vector to generate assessments. The primary ingestion payload includes a GitHub URL, an assignment rubric (JSON conforming to the A5 Rubric Engine schema), test case suites, and an options object containing student-provided environment variables.
+The tool utilizes a multi-source input vector to generate assessments. The primary ingestion payload includes a GitHub URL, a teacher-supplied rubric payload for that review, test case suites, and an options object containing student-provided environment variables. The rubric may be raw or non-standardized when submitted; the backend is responsible for normalizing or fingerprinting it before downstream evaluation and caching.
 
 To prevent data leakage, the pipeline implements a **Volatile Injection** strategy. Personal Access Tokens (PATs) clone private repositories into `data/raw/`, while sensitive environment variables are decrypted in-memory by the FastAPI backend and injected directly into the Docker Sandbox via the Docker SDK. These variables are never written to disk. Crucially, **GitHub credentials (PATs), `.env` file contents, and all PII are stripped by the Regex Redactor before any data leaves the system to an external LLM API** to satisfy NFR 2.1. The redactor pattern covers: GitHub tokens (`ghp_*`, `ghs_*`), environment variable key=value pairs, email addresses, and student names. A pre-flight check ensures language-specific configuration files (e.g., `package.json`) exist; if missing, the system triggers a `400 VALIDATION_ERROR` to save tokens.
 
 ### II. Ingestion Processing & Context Optimization
 
-To optimize performance, the system implements a **SHA-Based Caching** layer, hashing the GitHub Commit SHA with the Rubric ID. A re-evaluation is only triggered if the codebase or rubric version changes.
+To optimize performance, the system implements a **SHA-Based Caching** layer, hashing the GitHub Commit SHA with a normalized rubric digest. A re-evaluation is only triggered if the codebase or the effective rubric content changes.
 
 The **Context Optimizer** utilizes an AST parser to implement an **AST-Aware Chunking** strategy. Unlike fixed-size splitting, this strategy extracts terminal nodes (functions, classes, or methods) as discrete logical units. If a node exceeds the token limit, it is recursively split into internal branches; if multiple nodes are undersized, they are merged to maintain density. This ensures the LLM receives complete, unbroken logical contexts. 
 
 **Version Detection:** The pre-processor reads `pyproject.toml`, `pom.xml`, `package.json`, or `CMakeLists.txt` to detect the language version. If the rubric specifies `language_override`, that version takes precedence. The detected (or overridden) version and the style guide version parsed from the ingested document are stored in `metadata_json` and displayed to the instructor in the review UI.
 
-During the **Static Analysis** phase, linters (`pylint`/`eslint`) identify convention violations. These violations, alongside rubric criteria that explicitly require style or maintainability review, act as triggers for Pass 2 of the AI pipeline. Pass 2 queries the `pgvector` retrieval subsystem for styling excerpts. The RAG corpus is built from the following specific sources:
+During the **Static Analysis** phase, linters (`pylint`/`eslint`) identify convention violations. These checks represent **internal technical standards** derived from language style guides, which are distinct from the **external evaluation standards** expressed in the teacher-supplied rubric. Linter violations, alongside rubric criteria that explicitly require style or maintainability review, act as triggers for Pass 2 of the AI pipeline. Pass 2 queries the `pgvector` retrieval subsystem for styling excerpts. The RAG corpus is built from the following specific sources:
 - **Python:** PEP 8 (`https://peps.python.org/pep-0008/`)
 - **Java:** Oracle Java Code Conventions (`https://www.oracle.com/a/tech/docs/java/codeconventions.pdf`)
 - **TypeScript:** ts.dev Style Guide (`https://ts.dev/style/`)
@@ -242,7 +245,7 @@ The planned primary reasoning model is **gemini-3.1-pro-preview**, used for Pass
 
 **Retry Policy:** Each model gets **2 retries** with exponential backoff before a model-level failure is declared. On model-level failure, the pipeline falls back to the next tier (e.g., from `gemini-3.1-pro-preview` to `gpt-4o`). If `gpt-4o` also exhausts its 2 retries, the submission is marked `EVALUATION_FAILED` for human review.
 
-The key trade-offs are **quality, latency, cost, and context window**. gemini-3.1-pro-preview offers the best reasoning quality but costs more and responds more slowly. gemini-3.1-flash-lite is faster and cheaper, but less reliable for nuanced grading decisions. gpt-4o is kept as a fallback with strong structured-output reliability. The system also uses SHA-based caching keyed by commit hash and rubric version so unchanged submissions do not trigger repeated LLM calls.
+The key trade-offs are **quality, latency, cost, and context window**. gemini-3.1-pro-preview offers the best reasoning quality but costs more and responds more slowly. gemini-3.1-flash-lite is faster and cheaper, but less reliable for nuanced grading decisions. gpt-4o is kept as a fallback with strong structured-output reliability. The system also uses SHA-based caching keyed by commit hash and normalized rubric digest so unchanged submissions do not trigger repeated LLM calls.
 
 Prompt engineering uses one shared base system prompt plus pass-specific prompts. The shared base system prompt is:
 
@@ -356,7 +359,9 @@ The system will be considered successful if it targets a reduction from ~15 minu
 
 **CI/CD:** GitHub Actions workflow for linting and test runs on every push to `dev`; no automated deployment for the pilot phase (manual `git pull` + service restart).
 
-**Domain & TLS:** The (TBD) domain will be registered via Namecheap and pointed at the aforementioned DigitalOcean Droplet. TLS will be handled via Let's Encrypt certificates managed and auto-renewed through CertBot. Nginx will be used to act as a reverse proxy such that FastAPI never has to directly interact with TLS. This ensures another layer of security such that secrets are further protected from leaks.
+**Domain & TLS:** The project uses the registered domain **maple-a1.com** with the production API hostname **api.maple-a1.com** (DNS `A` record to the DigitalOcean Droplet). TLS is provided by Let's Encrypt certificates managed and auto-renewed through Certbot. Nginx terminates TLS and reverse-proxies to FastAPI so the application does not handle TLS directly. Operational steps live in `docs/deployment.md` (runbook for `api.maple-a1.com`). This adds a layer of security so secrets are further protected from leaks.
+
+**Reconciliation (production Nginx vs this section’s diagram):** Section 2 shows the frontend talking to FastAPI generically; in production, the public API is reached at **`https://api.maple-a1.com`** with Nginx forwarding **only** requests whose URI starts with **`/api/`** to Uvicorn (see `docs/deployment.md`, Nginx production structure). That matches the REST paths in Section 2 (`/api/v1/code-eval/…`) while leaving TLS termination at Nginx as described above. Host-level **`ufw`** on the Droplet must allow **TCP 443** (and **80**) alongside DigitalOcean firewall rules, or HTTPS will not reach Nginx even when `listen 443` is configured.
 
 **Environment Management:** All secrets will be managed via dotenv and `.env` files consistent with MAPLE architecture standards. A `.env.example` file with placeholder values will be committed to the repository and the actual `.env` file will be gitignored. The Regex Redactor in the LLM API Call Wrapper ensures secrets are scrubbed from all logs at runtime. Sensitive variables required to run student code for testing, such as API keys, will be decrypted in-memory and injected directly into Docker sandbox containers via the Docker SDK to guarantee secrets are never written to disk.
 
@@ -462,7 +467,7 @@ Actionable steps:
 - Implement `POST /api/v1/code-eval/rubrics` endpoint with A5-compatible JSON schema validation
 - Implement GitHub PAT-based repository cloning into `data/raw/` using the GitHub API
 - Implement Repository Pre-processor: strip `node_modules`, `venv`, compiled binaries, `.git`
-- Implement SHA + Rubric ID caching key; skip re-cloning on cache hit
+- Implement SHA + normalized rubric digest caching key; skip re-cloning on cache hit
 - Implement `.env` / secrets management; `.env.example` committed to repo
 - Implement Regex Redactor in `services/llm.py` (strip PATs, env vars, emails before any external call)
 - Angular scaffold: student submission form (GitHub URL + assignment ID), status polling page

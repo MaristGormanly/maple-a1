@@ -14,9 +14,15 @@ Significance to maple-a1:
 3. Type Safety: Pydantic ensures that variables like APP_PORT are integers, preventing type errors.
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 import os
+from pathlib import Path
+from typing import List
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 class Settings(BaseSettings):
     """
@@ -51,6 +57,22 @@ class Settings(BaseSettings):
     # private student repositories. Must be present in the environment at startup.
     GITHUB_PAT: str
     
+    # --- Docker Configuration ---
+    # The Docker daemon socket URL. Default is the standard Linux UNIX socket.
+    DOCKER_SOCKET_URL: str = "unix:///var/run/docker.sock"
+    # Fallback image when no language-specific image is specified.
+    DOCKER_DEFAULT_IMAGE: str = "python:3.12-slim"
+    # Default timeout (seconds) to wait for a container to finish before giving up.
+    DOCKER_CONTAINER_TIMEOUT: int = 60
+
+    # --- LLM Configuration ---
+    GEMINI_API_KEY: str | None = None
+    OPENAI_API_KEY: str | None = None
+    LLM_TIMEOUT_STANDARD: int = 30
+    LLM_TIMEOUT_COMPLEX: int = 60
+    LLM_MAX_RETRIES: int = 2
+    LLM_BACKOFF_BASE: float = 1.0
+
     # --- CORS (Cross-Origin Resource Sharing) ---
     # Defines which frontend domains are allowed to make requests to this backend API.
     # Can be a single string (comma-separated) or a list of strings.
@@ -71,7 +93,7 @@ class Settings(BaseSettings):
 
     # Pydantic model configuration
     model_config = SettingsConfigDict(
-        env_file=".env",             # Look for a .env file in the root directory
+        env_file=(PROJECT_ROOT / ".env", SERVER_ROOT / ".env"),
         env_file_encoding="utf-8",   # Read the .env file using UTF-8 encoding
         case_sensitive=True,         # Environment variables must match the exact case defined above
         extra="ignore"               # Ignore extra environment variables not defined in this class
@@ -81,3 +103,10 @@ class Settings(BaseSettings):
 # Import this `settings` object in other modules to access configuration values.
 # Example: `from server.app.config import settings; print(settings.DATABASE_URL)`
 settings = Settings()
+
+
+def get_required_github_pat() -> str:
+    github_pat = os.getenv("GITHUB_PAT") or settings.GITHUB_PAT
+    if not github_pat:
+        raise RuntimeError("GITHUB_PAT is not configured. Set it in the environment or in .env.")
+    return github_pat
