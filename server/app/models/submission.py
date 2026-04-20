@@ -4,15 +4,15 @@ from datetime import datetime
 from sqlalchemy import String, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .database import Base
+from server.app.models.database import Base
 
 
 class Submission(Base):
     __tablename__ = "submissions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    assignment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("assignments.id"), nullable=True
+    assignment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assignments.id"), nullable=False
     )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False

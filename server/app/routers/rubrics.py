@@ -6,8 +6,8 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Rubric, get_db
-from ..utils.responses import success_response, error_response
+from server.app.models import Rubric, get_db
+from server.app.utils.responses import success_response, error_response
 
 router = APIRouter(prefix="/rubrics", tags=["rubrics"])
 
