@@ -15,7 +15,7 @@ All that's left to do is message the group and say you've pushed--everything els
 
 We know that one of the major reasons we were assigned teams for this project was because of the isolative nature of working with AI, but we would be remiss not to mention that the second you introduce AI to your codebase, your team will inherently become more isolated. You then have to make a concious choice to  keep communicating with eachother (i.e pushing for in-person meetings, hashing out problems by talking to eachother rather than back and forth through audit files, and making joint decisions about the minor details that the AI misses, even when you feel like you can take the lead and do it on your own.)
 
-## AI as a Workflow Partner
+# AI as a Workflow Partner
 
 AI was integral to MAPLE A1's implementation across all three milestones, functioning as a prompt engineer, code generator, and debugger. AI shaped nearly every non-trivial decision in our work.
 
@@ -23,7 +23,7 @@ One concrete example was the cache key design. The initial approach used the raw
 
 ---
 
-## Biggest Technical Challenge
+# Biggest Technical Challenge
 
 The most difficult problem in Milestone 3 was blocked integration of the full pipeline: the LLM service `complete()` method was a stub through most of the milestone, meaning the three-pass evaluation pipeline we built had no live model to call. This forced a design decision on whether to block integration or build graceful degradation around the missing dependency.
 
@@ -31,7 +31,7 @@ A second challenge was the `CriterionScore.recommendation` field. The schema def
 
 ---
 
-## Design Deviations
+# Design Deviations
 
 Several implementation details diverged from the original design doc, each with a documented rationale.
 
