@@ -22,7 +22,6 @@ Secrets must never be hardcoded; use .env via dotenv
 DELIVERABLE
 Provide:
 
-Check off the prompt within the milstone tasks
 All code changes needed (file path + full updated function/class — not snippets)
 Any migration script if the schema changed
 A brief note on how to manually test this works
