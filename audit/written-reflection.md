@@ -11,7 +11,7 @@ This is due in part to our extensive documentation. For example, we have AI gene
 
 After each coding session is completed we individually generate a markdown file with a description of our changes, as well as an audit, which runs through the entire codebase and checks its alignment with the expectations of our design doc and our milestone doc. Any issues are then outlined in a markdown file and attributed to the individual (or individuals) most likely responsible for the issue. 
 
-All that's left to do is message the group and say you've pushed--everything else in the markdown. 
+All that's left to do is message the group and say you've pushed--everything else is in the markdown. 
 
 We know that one of the major reasons we were assigned teams for this project was because of the isolative nature of working with AI, but we would be remiss not to mention that the second you introduce AI to your codebase, your team will inherently become more isolated. You then have to make a concious choice to  keep communicating with eachother (i.e pushing for in-person meetings, hashing out problems by talking to eachother rather than back and forth through audit files, and making joint decisions about the minor details that the AI misses, even when you feel like you can take the lead and do it on your own.)
 
