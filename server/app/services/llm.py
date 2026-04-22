@@ -1,11 +1,16 @@
 """
 LLM service layer for MAPLE A1.
 
-Milestone 1 scope: Regex Redactor that strips secrets and PII before any
-data leaves the system to an external LLM API.
+Provides:
+    - Regex Redactor (`redact`, `redact_dict`) that strips GitHub PATs, emails,
+      and env-var values before any data leaves the system (M1).
+    - `complete()` wrapper with 2-retry-per-model exponential backoff,
+      standard/complex timeouts, a three-tier fallback chain
+      (gemini-3.1-pro-preview → gemini-3.1-flash-lite → gpt-4o), structured
+      JSON logging, and per-call token/cost accounting (M3).
 
-Milestone 3 scope (stub only): complete() LLM call wrapper with retry,
-fallback, structured logging, and cost tracking per Architecture Guide §4.
+Design-doc references: §4 Retry Policy, §4 Hierarchical Fallback Strategy,
+§6 Cost Estimate, §8 Milestone 3 "Finalize services/llm.py".
 """
 
 import asyncio
@@ -61,7 +66,7 @@ def _redact_recursive(obj: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Milestone 3 stubs -- LLM call wrapper
+# LLM call wrapper (M3)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -93,6 +98,23 @@ MODEL_CHAIN: list[ModelSpec] = [
     ModelSpec(name="gemini-3.1-flash-lite", provider="gemini"),
     ModelSpec(name="gpt-4o", provider="openai"),
 ]
+
+
+# Public rate-card pricing (USD per 1K tokens) for observability only — not
+# authoritative billing. Tuple = (input_per_1k, output_per_1k).
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "gemini-3.1-pro-preview": (0.00125, 0.01000),
+    "gemini-3.1-flash-lite":  (0.00010, 0.00040),
+    "gpt-4o":                 (0.00250, 0.01000),
+}
+
+
+def _estimate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    rates = MODEL_PRICING.get(model_name)
+    if rates is None:
+        return 0.0
+    in_rate, out_rate = rates
+    return (input_tokens / 1000.0) * in_rate + (output_tokens / 1000.0) * out_rate
 
 
 class ProviderError(Exception):
@@ -157,10 +179,12 @@ def _call_gemini(
     content = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
 
     usage_md = data.get("usageMetadata", {})
+    input_tokens = usage_md.get("promptTokenCount", 0)
+    output_tokens = usage_md.get("candidatesTokenCount", 0)
     usage = LLMUsage(
-        input_tokens=usage_md.get("promptTokenCount", 0),
-        output_tokens=usage_md.get("candidatesTokenCount", 0),
-        cost_usd=0.0,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_estimate_cost(spec.name, input_tokens, output_tokens),
     )
     return LLMResponse(content=content, usage=usage, latency_ms=0)
 
@@ -183,10 +207,12 @@ def _call_openai(
         temperature=temperature,
     )
     content = resp.choices[0].message.content or ""
+    input_tokens = resp.usage.prompt_tokens if resp.usage else 0
+    output_tokens = resp.usage.completion_tokens if resp.usage else 0
     usage = LLMUsage(
-        input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
-        output_tokens=resp.usage.completion_tokens if resp.usage else 0,
-        cost_usd=0.0,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_estimate_cost(spec.name, input_tokens, output_tokens),
     )
     return LLMResponse(content=content, usage=usage, latency_ms=0)
 
@@ -251,6 +277,7 @@ async def complete(
                             "latency_ms": latency_ms,
                             "input_tokens": response.usage.input_tokens,
                             "output_tokens": response.usage.output_tokens,
+                            "cost_usd": round(response.usage.cost_usd, 6),
                             "status": "ok",
                         }
                     )
