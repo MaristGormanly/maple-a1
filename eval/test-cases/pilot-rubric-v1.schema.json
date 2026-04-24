@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://maple-a1.com/schemas/pilot-rubric-v1.json",
+  "title": "MAPLE A1 Pilot Rubric (v1)",
+  "description": "Schema for the teacher-supplied rubric JSON used during the M4 pilot. Authored by the instructor in task 4.B.2.",
+  "type": "object",
+  "required": ["rubric_id", "version", "criteria"],
+  "properties": {
+    "rubric_id": {
+      "type": "string",
+      "description": "Unique identifier, e.g. 'cs320-assignment-1-v1'"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semver-style version string for this rubric"
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["criterion_id", "description", "weight", "levels"],
+        "properties": {
+          "criterion_id": { "type": "string" },
+          "description": { "type": "string", "minLength": 1 },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Points out of 100 assigned to this criterion"
+          },
+          "requires_style_review": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, Pass 2 (style/maintainability) runs even without linter violations"
+          },
+          "levels": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["label", "score", "description"],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "e.g. 'Exemplary', 'Proficient', 'Developing', 'Beginning'"
+                },
+                "score": { "type": "number", "minimum": 0, "maximum": 100 },
+                "description": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "total_weight_must_sum_to_100": {
+      "type": "boolean",
+      "default": true,
+      "description": "If true, the sum of criterion weights must equal 100 (validated at ingestion)."
+    }
+  }
+}
