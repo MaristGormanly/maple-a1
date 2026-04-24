@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from server.app.config import settings
+from server.app.middleware.rate_limit import install_rate_limiting, limiter
 from server.app.routers import auth, rubrics
 from server.app.utils.responses import success_response, error_response
 
@@ -21,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting (30/min default per IP; /evaluate tightens to 5/min below)
+install_rate_limiting(app, test_env=settings.APP_ENV == "test")
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/code-eval")
@@ -47,7 +51,9 @@ async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONR
 
 
 @app.post("/api/v1/code-eval/evaluate", response_model=SubmissionResponse)
+@limiter.limit("5/minute")
 async def evaluate_submission(
+    request: Request,
     github_url: str = Form(...),
     assignment_id: str | None = Form(default=None),
     rubric: UploadFile = File(...),
