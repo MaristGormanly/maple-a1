@@ -13,27 +13,31 @@ Current automated testing tools typically rely on functional correctness. They d
 
 The MAPLE A1 Code Submission Evaluator addresses this gap by combining **deterministic testing** with **AI-assisted analysis**. The system automatically clones a student's GitHub repository, executes instructor-provided test suites inside a secure sandbox environment, and uses a Large Language Model (LLM) to analyze the codebase and generate rubric-aligned feedback.
 
-**Current vs. Future Experience:** Currently, instructors must manually clone repositories or download emailed submissions, set up local testing environments, and write individual feedback. With A1, the experience is transformed: students submit a GitHub URL to an assignment ID, the system securely verifies access via Personal Access Tokens (PAT), and automatically runs the evaluation in an isolated sandbox, providing the instructor with structured, rubric-aligned feedback ready for review.
+**Current vs. Future Experience:** Currently, instructors must manually clone repositories or download emailed submissions, set up local testing environments, and write individual feedback. With A1 (MVP scope), the experience is transformed: the instructor submits a student's GitHub URL to an assignment ID, the system clones the repository using the instructor's Personal Access Token (PAT), and automatically runs the evaluation in an isolated sandbox, providing the instructor with structured, rubric-aligned feedback ready for review. Student-initiated submission is a post-MVP enhancement.
 
 The goal of A1 is to produce consistent evaluation results while significantly reducing the time instructors spend grading. The system acts as an intelligent assistant that provides preliminary grading and detailed feedback which instructors can review before final release.
 
+### MVP Scope Note
+
+For the pilot, A1 operates as an **instructor-driven evaluator**. The instructor (not the student) submits GitHub repository URLs to the system on the student's behalf, using their own Personal Access Token to authorize repository access. Student-facing submission, login, and per-student PAT onboarding are deferred post-MVP. This removes the need for student authentication, session management, and credential provisioning during the pilot, while still exercising the full ingestion → sandbox → AI → review pipeline.
+
 ### Core MVP User Stories
 
-1. **Student submission** — As a student, I want to submit my assignment via a GitHub repository link so that my code can be automatically evaluated without manually uploading files.
+1. **Instructor submission on behalf of students** — As an instructor, I want to submit a student's GitHub repository URL to an assignment so that the system can evaluate it without requiring the student to hold an account in A1.
 
-2. **Instructor assignment setup** — As an instructor, I want to create an assignment ID linked to a rubric so that students can submit their GitHub URLs directly to it and the system can securely verify repository access via Personal Access Tokens.
+2. **Instructor assignment setup** — As an instructor, I want to create an assignment ID linked to a rubric so that I can submit student GitHub URLs against it, and the system can access each repository through my instructor-level Personal Access Token (granted via course-wide collaborator or GitHub Classroom membership).
 
 3. **Automated test execution** — As an instructor, I want the system to run deterministic test suites against student code so that functional correctness can be evaluated consistently and objectively.
 
 4. **Rubric-aligned grading** — As an instructor, I want evaluations to map directly to rubric criteria so that grades remain consistent with course grading standards.
 
-5. **AI feedback generation** — As a student, I want detailed feedback with actionable recommendations (for example localized suggestions) explaining why my code lost points so that I can improve my programming skills and learn from mistakes.
+5. **AI feedback generation** — As an instructor, I want detailed feedback with actionable recommendations (for example localized suggestions) explaining why a student's code lost points so that I can forward pedagogically useful guidance to the student after review.
 
-6. **Instructor review before release** — As an instructor, I want to review AI-generated feedback before releasing it to students so that I can correct errors and maintain final grading authority.
+6. **Instructor review before release** — As an instructor, I want to review AI-generated feedback before forwarding it to students so that I can correct errors and maintain final grading authority.
 
 7. **Secure code execution** — As a system administrator, I want student code to run inside isolated containers so that malicious or poorly written code cannot compromise the grading infrastructure.
 
-8. **Asynchronous processing visibility** — As a student, I want to poll the system for status updates as my submission is processed so that I know when the evaluation is complete without needing persistent real-time connections.
+8. **Asynchronous processing visibility** — As an instructor, I want to poll the system for status updates as a submission is processed so that I know when the evaluation is complete without needing persistent real-time connections.
 
 ### Secondary / Stretch User Stories
 
@@ -96,7 +100,7 @@ flowchart LR
 
 ### Component Descriptions
 
-- **Frontend Interface (Angular):** The user-facing application serves as the primary dashboard for both faculty and students. Faculty use it to configure assignments and review teacher-supplied rubrics alongside student code submissions. Students and graders use it to submit GitHub repository links. The Angular client polls the backend for asynchronous grading updates and renders the final structured JSON feedback into an intuitive, human-readable format. Internal style-guide standards remain a separate backend concern from the external rubric text supplied at review time.
+- **Frontend Interface (Angular):** For MVP, the Angular client is an instructor-only dashboard used to configure assignments, submit student GitHub repository URLs against a rubric, poll for asynchronous grading updates, and review structured AI feedback before forwarding it to students. A student-facing view (self-service submission and results) is scaffolded but deferred post-MVP. Internal style-guide standards remain a separate backend concern from the external rubric text supplied at review time.
 
 - **Orchestration Backend (Python/FastAPI):** Acting as the central nervous system, this monolithic Python service exposes RESTful API endpoints, manages database transactions, and coordinates the entire grading lifecycle. FastAPI was chosen for its native asynchronous capabilities, which are essential when managing long-running tasks like cloning repositories, running tests, and awaiting LLM generations.
 
@@ -165,7 +169,7 @@ rubric=<rubric file upload>
 
 The PostgreSQL database persists the following core entities and relationships:
 
-- **User:** Represents users of the system. Contains `id` (UUID), `email`, `role` (enum: `Student`, `Instructor`), `github_username`, `github_pat_hash` (hashed, never plaintext), `created_at`, `updated_at`.
+- **User:** Represents users of the system. Contains `id` (UUID), `email`, `role` (enum: `Student`, `Instructor`), `github_username`, `github_pat_hash` (hashed, never plaintext), `created_at`, `updated_at`. **MVP note:** Only `Instructor` users are provisioned during the pilot. `Student` records are lightweight references (populated from the GitHub URL owner or an instructor-supplied identifier on `Submission`) and do not require login credentials. The schema is retained to support student-self-service in a future milestone.
 
 - **Assignment:** Represents a specific homework task. Contains `id`, `title`, `instructor_id` (references `User`), `test_suite_repo_url` (pointing to the secure instructor test code), `enable_lint_review` (boolean toggle), and `language_override` (string or null, where null uses repo-detected version). Assignment metadata may be reused during review, but the evaluation request still carries the teacher-supplied rubric content that should govern scoring for that run.
 
@@ -187,9 +191,9 @@ The A1 Code Evaluation pipeline is engineered as a **Deterministic-Probabilistic
 
 ### I. Data Acquisition & Secure Ingestion
 
-The tool utilizes a multi-source input vector to generate assessments. The primary ingestion payload includes a GitHub URL, a teacher-supplied rubric payload for that review, test case suites, and an options object containing student-provided environment variables. The rubric may be raw or non-standardized when submitted; the backend is responsible for normalizing or fingerprinting it before downstream evaluation and caching.
+The tool utilizes a multi-source input vector to generate assessments. The primary ingestion payload includes a GitHub URL, a teacher-supplied rubric payload for that review, test case suites, and an options object containing environment variables supplied by the instructor on behalf of the student. The rubric may be raw or non-standardized when submitted; the backend is responsible for normalizing or fingerprinting it before downstream evaluation and caching.
 
-To prevent data leakage, the pipeline implements a **Volatile Injection** strategy. Personal Access Tokens (PATs) clone private repositories into `data/raw/`, while sensitive environment variables are decrypted in-memory by the FastAPI backend and injected directly into the Docker Sandbox via the Docker SDK. These variables are never written to disk. Crucially, **GitHub credentials (PATs), `.env` file contents, and all PII are stripped by the Regex Redactor before any data leaves the system to an external LLM API** to satisfy NFR 2.1. The redactor pattern covers: GitHub tokens (`ghp_*`, `ghs_*`), environment variable key=value pairs, email addresses, and student names. A pre-flight check ensures language-specific configuration files (e.g., `package.json`) exist; if missing, the system triggers a `400 VALIDATION_ERROR` to save tokens.
+To prevent data leakage, the pipeline implements a **Volatile Injection** strategy. For MVP, the **instructor's** Personal Access Token (supplied once as the backend `GITHUB_PAT` environment variable) is used to clone every student repository into `data/raw/`. Per Marist course convention, each student is required to add the instructor as a collaborator (read access) on their assignment repository before submission; the instructor's PAT inherits access through those collaborator grants. Per-user PAT storage on the `User` model is retained in the schema for a future milestone when students submit directly, while sensitive environment variables are decrypted in-memory by the FastAPI backend and injected directly into the Docker Sandbox via the Docker SDK. These variables are never written to disk. Crucially, **GitHub credentials (PATs), `.env` file contents, and all PII are stripped by the Regex Redactor before any data leaves the system to an external LLM API** to satisfy NFR 2.1. The redactor pattern covers: GitHub tokens (`ghp_*`, `ghs_*`), environment variable key=value pairs, email addresses, and student names. A pre-flight check ensures language-specific configuration files (e.g., `package.json`) exist; if missing, the system triggers a `400 VALIDATION_ERROR` to save tokens.
 
 ### II. Ingestion Processing & Context Optimization
 
