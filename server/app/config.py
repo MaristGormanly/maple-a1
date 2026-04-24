@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 from typing import List
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -90,6 +91,15 @@ class Settings(BaseSettings):
         if isinstance(self.CORS_ORIGINS, str):
             return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
         return self.CORS_ORIGINS
+
+    @model_validator(mode="after")
+    def _reject_wildcard_cors_in_production(self) -> "Settings":
+        if self.APP_ENV == "production" and "*" in self.cors_origins_list:
+            raise ValueError(
+                "CORS_ORIGINS must not contain '*' when APP_ENV=production "
+                "(M4.A.4 — no wildcard in production)."
+            )
+        return self
 
     # Pydantic model configuration
     model_config = SettingsConfigDict(
