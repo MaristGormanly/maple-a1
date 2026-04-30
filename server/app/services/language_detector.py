@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import json
 import re
-import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    import tomli as tomllib
 
 
 def detect_language_version(

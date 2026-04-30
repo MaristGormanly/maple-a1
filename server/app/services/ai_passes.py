@@ -167,9 +167,12 @@ async def _invoke_complete(
 
     try:
         sig = inspect.signature(llm_complete)
-        if "timeout" in sig.parameters or any(
+        has_var_kw = any(
             p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-        ):
+        )
+        if not has_var_kw:
+            kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        if "timeout" in sig.parameters or has_var_kw:
             kwargs["timeout"] = timeout
         else:
             logger.debug(
@@ -489,8 +492,8 @@ async def run_pass2(
     if llm_complete is None:
         llm_complete = llm.complete  # pragma: no cover -- exercised via integration
 
-    if style_retriever is None:
-        style_retriever = _default_style_retriever  # may still be None
+    # Explicit ``None`` means "no retriever"; callers can pass
+    # ``_default_style_retriever`` directly when they want fallback behavior.
 
     skip, reason = _should_skip_pass2(
         enable_lint_review=enable_lint_review,

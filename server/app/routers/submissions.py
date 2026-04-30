@@ -97,11 +97,12 @@ async def get_submission(
 
     if submission.evaluation_result:
         er = submission.evaluation_result
-        review_status = er.review_status
+        review_status = getattr(er, "review_status", "pending")
 
         eval_data: dict = {
             "deterministic_score": er.deterministic_score,
             "review_status": review_status,
+            "ai_feedback": None,
         }
 
         meta = er.metadata_json

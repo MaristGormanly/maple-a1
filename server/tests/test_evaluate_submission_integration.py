@@ -223,7 +223,6 @@ class EvaluateSubmissionIntegrationTests(unittest.TestCase):
             expected_local_path = str(repo_path.relative_to(PROJECT_ROOT))
 
             def clone_side_effect(_clone_url: str, destination_path: Path, _github_pat: str) -> str:
-                self._write_file(destination_path / ".git" / "config", "[core]\nrepositoryformatversion = 0\n")
                 self._write_file(
                     destination_path / "node_modules" / "left-pad" / "index.js",
                     "module.exports = {};\n",

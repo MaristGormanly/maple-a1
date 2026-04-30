@@ -19,7 +19,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
-from app.utils.responses import error_response
+from ..utils.responses import error_response
 
 
 def _client_ip(request: Request) -> str:

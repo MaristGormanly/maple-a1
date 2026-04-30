@@ -121,9 +121,7 @@ class ProviderError(Exception):
     pass
 
 
-class EvaluationFailedError(Exception):
-    pass
-
+from .llm_validator import EvaluationFailedError
 
 _GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 

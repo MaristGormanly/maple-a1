@@ -33,6 +33,7 @@ from __future__ import annotations
 import inspect
 import logging
 import shutil
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -44,6 +45,7 @@ from .ai_passes import run_pass1, run_pass2, run_pass3
 from .assignments import get_assignment_by_id
 from .ast_chunker import CodeChunk, extract_chunks
 from .docker_client import run_container
+from .git_ingest import CloneError, clone_repository
 from .language_detector import detect_language_version
 from .llm_validator import EvaluationFailedError
 from .review_flags import compute_review_flags, determine_terminal_status
@@ -60,6 +62,16 @@ logger = logging.getLogger(__name__)
 
 _CONTAINER_TIMEOUT_SECONDS = 30
 
+
+def _resolve_clone_repository():
+    """Return a clone function, preferring app.main for test patching compatibility."""
+    app_main = sys.modules.get("app.main")
+    if app_main is not None:
+        maybe_clone = getattr(app_main, "clone_repository", None)
+        if callable(maybe_clone):
+            return maybe_clone
+    return clone_repository
+
 # --- Optional Jayden hooks (lazy imports, safe defaults) -------------------
 #
 # These modules are owned by Jayden and may not exist yet.  We import
@@ -72,9 +84,9 @@ except Exception:  # pragma: no cover -- import guard
     _retrieve_style_chunks = None  # type: ignore[assignment]
 
 try:  # pragma: no cover -- import guard
-    from .linter import run_linters as _run_linters  # type: ignore
+    from .linter_runner import run_linter as _run_linter  # type: ignore
 except Exception:  # pragma: no cover -- import guard
-    _run_linters = None  # type: ignore[assignment]
+    _run_linter = None  # type: ignore[assignment]
 
 
 # Cap chunker walks to avoid pathological repos exhausting the Pass 2
@@ -105,10 +117,18 @@ def _is_llm_ready() -> bool:
     matches and the AI phase activates automatically.
     """
     try:
+        sig = inspect.signature(llm.complete)
+        has_var_kw = any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if "model" not in sig.parameters and not has_var_kw:
+            return False
+    except (TypeError, ValueError):
+        pass
+
+    try:
         src = inspect.getsource(llm.complete)
     except (TypeError, OSError):
-        # Source unavailable (e.g. C-implemented) — assume ready and
-        # let any real failure surface during the actual call.
         return True
     return "raise NotImplementedError" not in src
 
@@ -145,9 +165,14 @@ async def run_pipeline(
             enable_lint_review = bool(assignment.enable_lint_review)
 
         test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
-        from .. import main as app_main
-
-        await app_main.clone_repository(suite_url, test_suite_dir, github_pat)
+        clone_impl = _resolve_clone_repository()
+        try:
+            await clone_impl(suite_url, test_suite_dir, github_pat)
+        except CloneError as exc:
+            shutil.rmtree(test_suite_dir, ignore_errors=True)
+            logger.error("run_pipeline: test suite clone failed: %s", exc.message)
+            await update_submission_status(db, submission_id, "Failed")
+            return
 
         lang = detect_language_version(student_repo_path, language_override)
         language = lang.get("language", "")
@@ -258,10 +283,10 @@ async def _run_evaluating_phase(
     # Linter results — Jayden's hook.  When unavailable, we pass
     # ``None`` so Pass 2's skip-logic can still fire correctly.
     linter_violations: list[dict] | None = None
-    if _run_linters is not None:
+    if _run_linter is not None:
         try:
             linter_violations = await _maybe_await(
-                _run_linters(student_repo_path, language=language)
+                _run_linter(language, str(student_repo_path))
             )
         except Exception:
             logger.exception(

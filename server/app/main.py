@@ -1,10 +1,285 @@
-from fastapi import FastAPI, Request
+import asyncio
+import json
+import os
+import re
+import shutil
+import sys
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+from uuid import UUID, uuid4
+
+import httpx
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from server.app.config import settings
-from server.app.middleware.rate_limit import install_rate_limiting, limiter
-from server.app.routers import auth, rubrics
-from server.app.utils.responses import success_response, error_response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, HttpUrl, TypeAdapter, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .cache import (
+    RepositoryCacheError,
+    build_repository_cache_key,
+    create_repository_cache_entry,
+    fingerprint_rubric_content,
+    load_repository_cache_entry,
+    save_repository_cache_entry,
+)
+
+from .config import get_required_github_pat, settings
+from .middleware.auth import get_current_user
+from .middleware.rate_limit import install_rate_limiting, limiter
+from .models.database import get_db
+from .preprocessing import RepositoryPreprocessingError, preprocess_repository
+from .routers import assignments, auth, rubrics, submissions
+from .services.assignments import parse_assignment_id, validate_assignment_exists
+from .services.git_ingest import CloneError, clone_repository
+from .services.llm import redact
+from .services.pipeline import run_pipeline
+from .services.submissions import create_submission
+from .utils.responses import error_response, success_response
+
+APP_VERSION = "1.0.0"
+_url_adapter = TypeAdapter(HttpUrl)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RAW_REPOS_ROOT = PROJECT_ROOT / "data" / "raw"
+CACHE_INDEX_PATH = PROJECT_ROOT / "data" / "cache" / "repository-cache-index.json"
+
+
+class MapleAPIError(Exception):
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+def sanitize_clone_path_segment(value: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower())
+    sanitized = sanitized.strip("._-")
+    if not sanitized:
+        raise ValueError("Repository path contains an invalid empty segment.")
+    return sanitized
+
+
+def determine_raw_clone_path(full_repo_name: str, commit_hash: str, cache_path_token: str) -> Path:
+    owner, repo_name = full_repo_name.split("/", 1)
+    raw_clone_path = RAW_REPOS_ROOT / (
+        f"{sanitize_clone_path_segment(owner)}-"
+        f"{sanitize_clone_path_segment(repo_name)}-"
+        f"{commit_hash[:12].lower()}-"
+        f"{cache_path_token[:8].lower()}"
+    )
+    RAW_REPOS_ROOT.mkdir(parents=True, exist_ok=True)
+    return raw_clone_path
+
+
+def create_staging_clone_path(full_repo_name: str) -> Path:
+    owner, repo_name = full_repo_name.split("/", 1)
+    staging_path = RAW_REPOS_ROOT / (
+        f"{sanitize_clone_path_segment(owner)}-"
+        f"{sanitize_clone_path_segment(repo_name)}-"
+        f"staging-{uuid4().hex[:8]}"
+    )
+    RAW_REPOS_ROOT.mkdir(parents=True, exist_ok=True)
+    return staging_path
+
+
+def parse_github_repo_url(url: HttpUrl) -> tuple[str, str]:
+    if url.scheme != "https":
+        raise ValueError("github_url must use https://")
+
+    if url.host not in {"github.com", "www.github.com"}:
+        raise ValueError("github_url must point to github.com")
+
+    path_parts = [part for part in url.path.split("/") if part]
+    if len(path_parts) < 2:
+        raise ValueError(
+            "github_url must be a repository URL in the form https://github.com/<owner>/<repo>"
+        )
+
+    owner, repo_name = path_parts[0], path_parts[1]
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+
+    if not owner or not repo_name:
+        raise ValueError("github_url must include both an owner and repository name")
+
+    return owner, repo_name
+
+
+class SubmissionData(BaseModel):
+    submission_id: str
+    github_url: str
+    assignment_id: str | None
+    rubric_digest: str
+    status: str
+    local_repo_path: str
+    commit_hash: str
+
+
+class GitHubRepoMetadata(BaseModel):
+    full_name: str
+    default_branch: str
+    visibility: str
+    clone_url: str
+
+
+class ResponseMetadata(BaseModel):
+    timestamp: str
+    module: str
+    version: str
+
+
+class ErrorDetails(BaseModel):
+    code: str
+    message: str
+
+
+class SubmissionResponse(BaseModel):
+    success: bool
+    data: SubmissionData
+    error: None = None
+    metadata: ResponseMetadata
+
+
+def build_response_metadata() -> ResponseMetadata:
+    return ResponseMetadata(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        module="a1",
+        version=APP_VERSION,
+    )
+
+
+def build_error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "success": False,
+            "data": None,
+            "error": ErrorDetails(code=code, message=message).model_dump(),
+            "metadata": build_response_metadata().model_dump(),
+        },
+    )
+
+
+async def validate_github_repo_access(
+    owner: str, repo_name: str, github_pat: str
+) -> GitHubRepoMetadata:
+    headers = {
+        "Authorization": f"Bearer {github_pat}",
+        "Accept": "application/vnd.github+json",
+    }
+    github_api_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(github_api_url, headers=headers)
+        except httpx.HTTPError as exc:
+            raise MapleAPIError(
+                status_code=502,
+                code="EXTERNAL_SERVICE_ERROR",
+                message="Unable to reach the GitHub API to validate repository access.",
+            ) from exc
+
+    if response.status_code == 401:
+        raise MapleAPIError(
+            status_code=401,
+            code="AUTHENTICATION_ERROR",
+            message="GITHUB_PAT is invalid or expired.",
+        )
+
+    if response.status_code == 403:
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            raise MapleAPIError(
+                status_code=503,
+                code="EXTERNAL_SERVICE_ERROR",
+                message="GitHub API rate limit exceeded while validating repository access.",
+            )
+
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="Repository not found or inaccessible with the current GITHUB_PAT.",
+        )
+
+    if response.status_code == 404:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="Repository not found or inaccessible with the current GITHUB_PAT.",
+        )
+
+    if response.status_code != 200:
+        raise MapleAPIError(
+            status_code=502,
+            code="EXTERNAL_SERVICE_ERROR",
+            message="GitHub API returned an unexpected response while validating repository access.",
+        )
+
+    payload = response.json()
+    return GitHubRepoMetadata(
+        full_name=payload["full_name"],
+        default_branch=payload["default_branch"],
+        visibility=payload["visibility"],
+        clone_url=payload["clone_url"],
+    )
+
+
+async def resolve_repository_head_commit_hash(
+    owner: str, repo_name: str, branch_name: str, github_pat: str
+) -> str:
+    headers = {
+        "Authorization": f"Bearer {github_pat}",
+        "Accept": "application/vnd.github+json",
+    }
+    encoded_branch_name = quote(branch_name, safe="")
+    github_api_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits/{encoded_branch_name}"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(github_api_url, headers=headers)
+        except httpx.HTTPError as exc:
+            raise MapleAPIError(
+                status_code=502,
+                code="EXTERNAL_SERVICE_ERROR",
+                message="Unable to resolve the repository commit SHA from the GitHub API.",
+            ) from exc
+
+    if response.status_code == 401:
+        raise MapleAPIError(
+            status_code=401,
+            code="AUTHENTICATION_ERROR",
+            message="GITHUB_PAT is invalid or expired.",
+        )
+
+    if response.status_code in {403, 404}:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="Repository commit SHA could not be resolved for the current default branch.",
+        )
+
+    if response.status_code != 200:
+        raise MapleAPIError(
+            status_code=502,
+            code="EXTERNAL_SERVICE_ERROR",
+            message="GitHub API returned an unexpected response while resolving the repository commit SHA.",
+        )
+
+    payload = response.json()
+    commit_hash = payload.get("sha", "").strip()
+    if not commit_hash:
+        raise MapleAPIError(
+            status_code=502,
+            code="EXTERNAL_SERVICE_ERROR",
+            message="GitHub API returned an empty commit SHA for the repository.",
+        )
+
+    return commit_hash
+
 
 app = FastAPI(
     title="MAPLE A1 Code Evaluator",
@@ -24,7 +299,14 @@ app.add_middleware(
 )
 
 # Rate limiting (30/min default per IP; /evaluate tightens to 5/min below)
-install_rate_limiting(app, test_env=settings.APP_ENV == "test")
+install_rate_limiting(
+    app,
+    test_env=(
+        settings.APP_ENV == "test"
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or "pytest" in sys.modules
+    ),
+)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/code-eval")
@@ -42,7 +324,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         code="VALIDATION_ERROR",
         message=details,
     )
-
 
 
 @app.exception_handler(MapleAPIError)
@@ -197,6 +478,9 @@ async def evaluate_submission(
     try:
         commit_hash = await clone_repository(repo_metadata.clone_url, staging_clone_path, github_pat)
         preprocess_repository(staging_clone_path)
+    except CloneError as exc:
+        shutil.rmtree(staging_clone_path, ignore_errors=True)
+        raise MapleAPIError(exc.status_code, exc.code, exc.message) from exc
     except RepositoryPreprocessingError as exc:
         shutil.rmtree(staging_clone_path, ignore_errors=True)
         raise MapleAPIError(

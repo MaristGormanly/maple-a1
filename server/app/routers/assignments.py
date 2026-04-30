@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, require_role
 from ..models.database import get_db
 from ..services.assignments import (
     create_assignment,
@@ -41,7 +41,7 @@ def _assignment_to_dict(a) -> dict:
 async def create_assignment_endpoint(
     request: AssignmentCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("Instructor")),
 ):
     rubric_uuid = None
     if request.rubric_id:
