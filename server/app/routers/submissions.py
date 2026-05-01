@@ -40,6 +40,71 @@ def _can_view_submission(submission: Submission, current_user: dict) -> bool:
     return False
 
 
+def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
+    """Build the canonical SubmissionStatusData envelope for a submission.
+
+    Used by both ``GET /submissions/{id}`` and ``POST /submissions/{id}/review``
+    so the two endpoints return byte-identical shapes (modulo timestamps).
+    AI feedback is surfaced only to privileged viewers (Instructor/Admin)
+    or when the submission has been approved.
+    """
+    role = viewer_role.strip().lower() if viewer_role else ""
+    viewer_is_privileged = role in ("instructor", "admin")
+
+    data: dict = {
+        "submission_id": str(submission.id),
+        "assignment_id": str(submission.assignment_id) if submission.assignment_id else None,
+        "student_id": str(submission.student_id),
+        "github_repo_url": submission.github_repo_url,
+        "commit_hash": submission.commit_hash,
+        "status": submission.status,
+        "created_at": submission.created_at.isoformat() if submission.created_at else None,
+    }
+
+    if submission.evaluation_result:
+        er = submission.evaluation_result
+        review_status = getattr(er, "review_status", "pending")
+        instructor_notes = getattr(er, "instructor_notes", None)
+
+        eval_data: dict = {
+            "deterministic_score": er.deterministic_score,
+            "review_status": review_status,
+            "instructor_notes": instructor_notes,
+            "ai_feedback": None,
+        }
+
+        meta = er.metadata_json
+        if meta and isinstance(meta, dict):
+            eval_data["metadata"] = {
+                "language": meta.get("language"),
+                "test_summary": meta.get("test_summary"),
+            }
+
+        feedback_json = er.ai_feedback_json
+        if feedback_json and isinstance(feedback_json, dict):
+            if viewer_is_privileged or review_status == "approved":
+                criteria_scores = feedback_json.get("criteria_scores") or []
+                recommendations = [
+                    c["recommendation"]
+                    for c in criteria_scores
+                    if isinstance(c, dict) and c.get("recommendation")
+                ]
+                ai_meta = feedback_json.get("metadata") or {}
+                eval_data["ai_feedback"] = {
+                    "criteria_scores": criteria_scores,
+                    "flags": feedback_json.get("flags") or [],
+                    "metadata": {
+                        "style_guide_version": ai_meta.get("style_guide_version"),
+                        "language": ai_meta.get("language"),
+                    },
+                    "recommendations": recommendations,
+                }
+
+        data["evaluation"] = eval_data
+
+    return data
+
+
 @router.get("/{submission_id}")
 async def get_submission(
     submission_id: str,
@@ -77,64 +142,9 @@ async def get_submission(
             message="Access denied.",
         )
 
-    try:
-        current_user_id = uuid.UUID(str(current_user["sub"]))
-    except (KeyError, ValueError, TypeError):
-        current_user_id = None
-
-    role = str(current_user.get("role", "")).strip().lower()
-    viewer_is_privileged = role in ("instructor", "admin")
-
-    data = {
-        "submission_id": str(submission.id),
-        "assignment_id": str(submission.assignment_id),
-        "student_id": str(submission.student_id),
-        "github_repo_url": submission.github_repo_url,
-        "commit_hash": submission.commit_hash,
-        "status": submission.status,
-        "created_at": submission.created_at.isoformat() if submission.created_at else None,
-    }
-
-    if submission.evaluation_result:
-        er = submission.evaluation_result
-        review_status = getattr(er, "review_status", "pending")
-
-        eval_data: dict = {
-            "deterministic_score": er.deterministic_score,
-            "review_status": review_status,
-            "ai_feedback": None,
-        }
-
-        meta = er.metadata_json
-        if meta and isinstance(meta, dict):
-            eval_data["metadata"] = {
-                "language": meta.get("language"),
-                "test_summary": meta.get("test_summary"),
-            }
-
-        feedback_json = er.ai_feedback_json
-        if feedback_json and isinstance(feedback_json, dict):
-            if viewer_is_privileged or review_status == "approved":
-                criteria_scores = feedback_json.get("criteria_scores") or []
-                recommendations = [
-                    c["recommendation"]
-                    for c in criteria_scores
-                    if isinstance(c, dict) and c.get("recommendation")
-                ]
-                ai_meta = feedback_json.get("metadata") or {}
-                eval_data["ai_feedback"] = {
-                    "criteria_scores": criteria_scores,
-                    "flags": feedback_json.get("flags") or [],
-                    "metadata": {
-                        "style_guide_version": ai_meta.get("style_guide_version"),
-                        "language": ai_meta.get("language"),
-                    },
-                    "recommendations": recommendations,
-                }
-
-        data["evaluation"] = eval_data
-
-    return success_response(data)
+    return success_response(
+        _serialize_submission(submission, str(current_user.get("role", "")))
+    )
 
 
 @router.post("/{submission_id}/review")
@@ -193,20 +203,6 @@ async def review_submission(
     await db.refresh(submission)
     await db.refresh(submission.evaluation_result)
 
-    data = {
-        "submission_id": str(submission.id),
-        "assignment_id": str(submission.assignment_id),
-        "student_id": str(submission.student_id),
-        "github_repo_url": submission.github_repo_url,
-        "commit_hash": submission.commit_hash,
-        "status": submission.status,
-        "created_at": submission.created_at.isoformat() if submission.created_at else None,
-        "evaluation": {
-            "deterministic_score": submission.evaluation_result.deterministic_score,
-            "ai_feedback": submission.evaluation_result.ai_feedback_json,
-            "review_status": submission.evaluation_result.review_status,
-            "instructor_notes": submission.evaluation_result.instructor_notes,
-        },
-    }
-
-    return success_response(data)
+    return success_response(
+        _serialize_submission(submission, str(current_user.get("role", "")))
+    )

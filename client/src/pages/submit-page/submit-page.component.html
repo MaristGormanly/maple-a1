@@ -1,52 +1,182 @@
-<div class="submit-page">
-  <h1>Submit Repository for Evaluation</h1>
+<div class="topbar">
+  <div class="crumbs">
+    <span>Submissions</span>
+    <span class="crumbs__sep">/</span>
+    <strong>New</strong>
+  </div>
+</div>
+
+<div class="page page--narrow">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Submit a student repository</h1>
+      <div class="page-header__sub">
+        For the pilot, you submit student repos on their behalf. Your instructor PAT clones each repo
+        through course-wide collaborator access.
+      </div>
+    </div>
+  </div>
 
   @if (errorMessage) {
-    <div class="error-banner" role="alert">{{ errorMessage }}</div>
+    <div style="margin-bottom:20px">
+      <div class="banner banner--error" role="alert">
+        <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn"/></svg></span>
+        <div class="banner__copy">
+          <div class="banner__title">Submission failed</div>
+          <div class="banner__body">{{errorMessage}}</div>
+        </div>
+        <button class="banner__close" (click)="errorMessage = null" aria-label="Dismiss">
+          <svg width="14" height="14"><use href="#icon-x"/></svg>
+        </button>
+      </div>
+    </div>
   }
 
-  <form [formGroup]="form" (ngSubmit)="onSubmit()">
-    <div class="field">
-      <label for="githubUrl">GitHub URL <span class="required">*</span></label>
-      <input
-        id="githubUrl"
-        type="text"
-        formControlName="githubUrl"
-        placeholder="https://github.com/owner/repo"
-      />
-      @if (form.controls.githubUrl.touched && form.controls.githubUrl.invalid) {
-        <span class="field-error">Must be a valid GitHub repository URL (https://github.com/owner/repo)</span>
-      }
+  <div class="card" style="border-width:1px 2px 1px 5px">
+    <div class="card__head">
+      <div>
+        <div class="card__title">New submission</div>
+        <div class="card__sub">All fields are required. Re-submitting the same commit returns the cached evaluation.</div>
+      </div>
     </div>
+    <div class="card__body">
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" style="display:flex;flex-direction:column;gap:18px">
 
-    <div class="field">
-      <label for="assignmentId">Assignment ID <span class="required">*</span></label>
-      <input
-        id="assignmentId"
-        type="text"
-        formControlName="assignmentId"
-        placeholder="e.g. 11111111-2222-3333-4444-555555555555"
-      />
-      @if (form.controls.assignmentId.touched && form.controls.assignmentId.invalid) {
-        <span class="field-error">Assignment ID is required.</span>
-      }
+        <!-- Student (display label only) -->
+        <div class="field">
+          <label class="field__label" for="studentId">
+            Student name <span class="field__opt">(optional)</span>
+          </label>
+          <input
+            id="studentId"
+            class="input"
+            [class.input--error]="showStudentErr"
+            placeholder="Jordan Vega — jvega@marist.edu"
+            formControlName="studentId"
+            [disabled]="submitting"
+          />
+          @if (showStudentErr) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn"/></svg>
+              Keep the label under 120 characters.
+            </span>
+          } @else {
+            <span class="field__hint">Display label only — used in the dashboard breadcrumb. Not sent to the backend.</span>
+          }
+        </div>
+
+        <!-- GitHub URL -->
+        <div class="field">
+          <label class="field__label" for="githubUrl">
+            Student GitHub URL <span class="field__req">*</span>
+          </label>
+          <div class="input-wrap">
+            <span class="input-wrap__adorn">
+              <svg width="14" height="14"><use href="#icon-github"/></svg>
+            </span>
+            <input
+              id="githubUrl"
+              class="input input--mono"
+              [class.input--error]="showUrlErr"
+              placeholder="https://github.com/owner/repo"
+              formControlName="githubUrl"
+              [disabled]="submitting"
+            />
+          </div>
+          @if (showUrlErr) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn"/></svg>
+              Must match https://github.com/owner/repo
+            </span>
+          } @else {
+            <span class="field__hint">Public or private. The grader uses your instructor PAT (course-wide collaborator) to clone.</span>
+          }
+        </div>
+
+        <!-- Assignment ID -->
+        <div class="field">
+          <label class="field__label" for="assignmentId">
+            Assignment ID <span class="field__req">*</span>
+          </label>
+          <input
+            id="assignmentId"
+            class="input input--mono"
+            [class.input--error]="showIdErr"
+            placeholder="11111111-2222-3333-4444-555555555555"
+            formControlName="assignmentId"
+            [disabled]="submitting"
+          />
+          @if (showIdErr) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn"/></svg>
+              Assignment ID must be a valid UUID.
+            </span>
+          } @else {
+            <span class="field__hint">From the assignment you created. Determines test suite and rubric.</span>
+          }
+        </div>
+
+        <!-- Rubric file -->
+        <div class="field">
+          <label class="field__label">
+            Rubric file <span class="field__req">*</span>
+          </label>
+          <div
+            class="filedrop"
+            [class.filedrop--error]="fileError"
+            [class.filedrop--active]="!!selectedFile"
+            (click)="triggerFileInput()"
+            role="button"
+          >
+            <div class="filedrop__icon">
+              <svg width="20" height="20"><use href="#icon-upload"/></svg>
+            </div>
+            <div class="filedrop__copy">
+              @if (selectedFile) {
+                <div class="filedrop__file">
+                  <svg width="13" height="13"><use href="#icon-file"/></svg>
+                  {{selectedFile.name}}
+                </div>
+                <div class="filedrop__sub">{{(selectedFile.size / 1024).toFixed(1)}} KB · .{{selectedFile.name.split('.').pop()}}</div>
+              } @else {
+                <div class="filedrop__title">Click to attach or drop file</div>
+                <div class="filedrop__sub">accepts .json, .txt</div>
+              }
+            </div>
+            @if (selectedFile) {
+              <button type="button" class="btn btn--ghost btn--sm" (click)="clearFile($event)">Clear</button>
+            }
+            <input
+              #fileInput
+              type="file"
+              accept=".json,.txt"
+              style="display:none"
+              (change)="onFileChange($event)"
+            />
+          </div>
+          @if (fileError) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn"/></svg>
+              Attach the rubric to score this submission against.
+            </span>
+          } @else {
+            <span class="field__hint">JSON or TXT. Sent with the request and used as the grading standard for this run.</span>
+          }
+        </div>
+
+      </form>
     </div>
-
-    <div class="field">
-      <label for="rubric">Rubric File <span class="required">*</span></label>
-      <input
-        id="rubric"
-        type="file"
-        accept=".json,.txt"
-        (change)="onFileChange($event)"
-      />
-      @if (fileError) {
-        <span class="field-error">A rubric file is required.</span>
-      }
+    <div class="card__foot">
+      <div style="flex:1"></div>
+      <button class="btn btn--primary" (click)="onSubmit()" [disabled]="submitting">
+        @if (submitting) {
+          <span class="spinner"></span>
+          Submitting…
+        } @else {
+          Submit for evaluation
+          <svg width="14" height="14"><use href="#icon-chevron"/></svg>
+        }
+      </button>
     </div>
-
-    <button type="submit" [disabled]="submitting">
-      {{ submitting ? 'Submitting...' : 'Submit' }}
-    </button>
-  </form>
+  </div>
 </div>

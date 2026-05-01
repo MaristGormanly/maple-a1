@@ -61,6 +61,7 @@ export interface AiFeedback {
 export interface EvaluationResult {
   deterministic_score: number | null;
   review_status?: string;
+  instructor_notes?: string | null;
   ai_feedback?: AiFeedback | null;
   metadata?: {
     language: LanguageInfo | null;

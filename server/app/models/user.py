@@ -12,6 +12,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, nullable=False)
     github_username: Mapped[str | None] = mapped_column(String, nullable=True)
     github_pat_hash: Mapped[str | None] = mapped_column(String, nullable=True)

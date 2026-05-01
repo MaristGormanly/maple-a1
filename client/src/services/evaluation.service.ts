@@ -1,5 +1,5 @@
-import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
@@ -7,17 +7,18 @@ import { ReviewRequest, SubmissionResponse, SubmissionStatusResponse } from '../
 
 @Injectable({ providedIn: 'root' })
 export class EvaluationService {
+  private http = inject(HttpClient);
+
   private readonly url = `${environment.apiBaseUrl}/api/v1/code-eval/evaluate`;
   private readonly submissionsUrl = `${environment.apiBaseUrl}/api/v1/code-eval/submissions`;
 
-  constructor(private http: HttpClient) {}
+  // The Authorization header is attached automatically by `authInterceptor`
+  // (registered in app.config.ts) so individual methods do not build it.
 
-  // TODO: Replace devToken stub with a real token from the auth service once
-  // POST /api/v1/code-eval/auth/login is implemented (Milestone 2).
   submitEvaluation(
     githubUrl: string,
     assignmentId: string,
-    rubricFile: File
+    rubricFile: File,
   ): Observable<SubmissionResponse> {
     const body = new FormData();
     body.append('github_url', githubUrl);
@@ -26,11 +27,7 @@ export class EvaluationService {
 
     // Do not set Content-Type manually — the browser sets multipart/form-data
     // with the correct boundary automatically when the body is FormData.
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-    });
-
-    return this.http.post<SubmissionResponse>(this.url, body, { headers }).pipe(
+    return this.http.post<SubmissionResponse>(this.url, body).pipe(
       catchError((err) => {
         const message: string =
           err?.error?.error?.message ?? err?.message ?? 'Unknown error';
@@ -51,11 +48,8 @@ export class EvaluationService {
   }
 
   getSubmissionStatus(submissionId: string): Observable<SubmissionStatusResponse> {
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-    });
     return this.http
-      .get<SubmissionStatusResponse>(`${this.submissionsUrl}/${submissionId}`, { headers })
+      .get<SubmissionStatusResponse>(`${this.submissionsUrl}/${submissionId}`)
       .pipe(
         catchError((err) => {
           const message: string =
@@ -77,15 +71,10 @@ export class EvaluationService {
   }
 
   submitReview(submissionId: string, request: ReviewRequest): Observable<SubmissionStatusResponse> {
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-      'Content-Type': 'application/json',
-    });
     return this.http
       .post<SubmissionStatusResponse>(
         `${this.submissionsUrl}/${submissionId}/review`,
         request,
-        { headers }
       )
       .pipe(
         catchError((err) => {

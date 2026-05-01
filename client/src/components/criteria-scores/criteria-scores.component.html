@@ -1,32 +1,40 @@
 @if (criteriaScores.length > 0) {
-  <div class="criteria-list">
-    @for (criterion of criteriaScores; track criterion.criterion_name) {
-      <div class="criterion" [class.criterion--review]="isNeedsReview(criterion)">
-        <div class="criterion-header">
-          <span class="criterion-name">{{ criterion.criterion_name }}</span>
-          <div class="criterion-badges">
-            <span class="score">{{ criterion.score }}<small>/100</small></span>
-            <span class="level-badge" [ngClass]="levelClass(criterion.level)">
-              {{ levelLabel(criterion.level) }}
+  <div>
+    <div class="section-title">
+      Criteria scores
+      <span class="section-title__count">{{criteriaScores.length}} rubric items</span>
+    </div>
+
+    @for (c of criteriaScores; track c.criterion_name) {
+      <div class="criterion" [class.criterion--review]="isNeedsReview(c)">
+        <div class="criterion__head">
+          <div class="criterion__name">{{c.criterion_name}}</div>
+          <div class="criterion__badges">
+            <span class="criterion__score">{{c.score}}<small>/100</small></span>
+            <span
+              class="badge"
+              [class.badge--green]="badgeTone(c.level) === 'green'"
+              [class.badge--amber]="badgeTone(c.level) === 'amber'"
+              [class.badge--red]="badgeTone(c.level) === 'red'"
+              [class.badge--neutral]="badgeTone(c.level) === 'neutral'"
+            >
+              <span class="badge__dot"></span>{{levelLabel(c.level)}}
             </span>
-            @if (isNeedsReview(criterion)) {
-              <span class="review-flag">Needs Human Review</span>
-            }
           </div>
         </div>
-
-        <p class="justification">{{ criterion.justification }}</p>
-
-        <div class="confidence-row">
-          <span>Confidence</span>
-          <div class="confidence-bar-track">
+        <p class="criterion__just">{{c.justification}}</p>
+        <div class="conf-row">
+          <span class="conf-row__label">Confidence</span>
+          <div class="conf-track">
             <div
-              class="confidence-bar-fill"
-              [ngClass]="confidenceBarClass(criterion.confidence)"
-              [style.width.%]="confidencePct(criterion.confidence)"
+              class="conf-fill"
+              [class.conf-fill--hi]="c.confidence >= 0.75"
+              [class.conf-fill--mid]="c.confidence >= 0.5 && c.confidence < 0.75"
+              [class.conf-fill--lo]="c.confidence < 0.5"
+              [style.width.%]="confidencePct(c.confidence)"
             ></div>
           </div>
-          <span>{{ confidencePct(criterion.confidence) }}%</span>
+          <span class="conf-row__val">{{confidencePct(c.confidence)}}%</span>
         </div>
       </div>
     }

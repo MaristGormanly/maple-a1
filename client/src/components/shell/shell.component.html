@@ -1,0 +1,40 @@
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand__mark">MAPLE</span>
+      <span class="brand__sub">A1</span>
+    </div>
+
+    <div class="nav-section">Instructor</div>
+
+    <a class="nav-item" routerLink="/dashboard" routerLinkActive="nav-item--active">
+      <svg width="16" height="16"><use href="#icon-list"/></svg>
+      Submissions
+    </a>
+    <a class="nav-item" routerLink="/submit" routerLinkActive="nav-item--active">
+      <svg width="16" height="16"><use href="#icon-submit"/></svg>
+      New submission
+    </a>
+    <a class="nav-item" routerLink="/assignment" routerLinkActive="nav-item--active">
+      <svg width="16" height="16"><use href="#icon-plus"/></svg>
+      New assignment
+    </a>
+
+    <div class="sidebar__spacer"></div>
+
+    <div class="user-card">
+      <div class="user-card__avatar">EM</div>
+      <div class="user-card__meta">
+        <div class="user-card__name">Dr. Elena Marsh</div>
+        <div class="user-card__role">Instructor</div>
+      </div>
+      <button class="iconbtn" title="Sign out" (click)="logout()">
+        <svg width="14" height="14"><use href="#icon-logout"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <router-outlet />
+  </div>
+</div>
