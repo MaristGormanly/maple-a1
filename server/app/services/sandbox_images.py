@@ -30,7 +30,7 @@ SANDBOX_PROFILES: dict[str, SandboxProfile] = {
         language="python",
         image="python:3.12-slim",
         install_command="pip install --no-cache-dir -r requirements.txt",
-        test_command="pytest --tb=short -v",
+        test_command="python -m pytest --tb=short -v --continue-on-collection-errors",
         working_dir="/workspace",
     ),
     "java": SandboxProfile(

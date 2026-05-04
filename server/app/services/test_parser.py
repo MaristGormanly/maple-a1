@@ -118,6 +118,8 @@ _BUILD_PATTERNS = [
 
 _FRAMEWORK_MARKERS = [
     re.compile(r"=+\s*(FAILURES|ERRORS|short test summary|passed|failed)\s*=+", re.IGNORECASE),
+    # Pytest summary line, e.g. "=== 7 failed, 102 passed, 23 errors in 3.20s ==="
+    re.compile(r"=+[^=\n]*\d+\s+(passed|failed|error|skipped)[^=\n]*=+", re.IGNORECASE),
     re.compile(r"<testsuite\b"),
     re.compile(r"Tests?:\s+\d+\s+(passed|failed)", re.IGNORECASE),
     re.compile(r"Test Suites?:", re.IGNORECASE),
@@ -180,6 +182,26 @@ def _parse_pytest(text: str) -> list[dict]:
             raw_status = m.group(1).upper()
             status = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error"}.get(raw_status, "error")
             tests.append({"name": m.group(2).strip(), "status": status, "message": m.group(3)})
+
+    # Reconcile with the pytest summary line so truncated logs (log_normalizer
+    # drops the middle of long traces) still produce accurate aggregate counts.
+    summary = _PYTEST_SUMMARY.search(text)
+    if summary:
+        summary_counts: dict[str, int] = {}
+        for cm in _PYTEST_COUNT.finditer(summary.group("counts") or ""):
+            n = int(cm.group(1))
+            status = cm.group(2).rstrip("s")
+            if status in {"passed", "failed", "error", "skipped"}:
+                summary_counts[status] = n
+
+        extracted: dict[str, int] = {"passed": 0, "failed": 0, "error": 0, "skipped": 0}
+        for t in tests:
+            extracted[t["status"]] = extracted.get(t["status"], 0) + 1
+
+        for status, total in summary_counts.items():
+            missing = total - extracted.get(status, 0)
+            for i in range(missing):
+                tests.append({"name": f"truncated-{status}-{i}", "status": status, "message": None})
 
     return tests
 

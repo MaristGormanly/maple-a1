@@ -41,6 +41,9 @@ from typing import Any
 
 from ..models.database import async_session_maker
 from . import llm
+# region agent log
+from ._debug_log import dlog as _dlog  # debug session d6fd1e
+# endregion
 from .ai_passes import run_pass1, run_pass2, run_pass3
 from .assignments import get_assignment_by_id
 from .ast_chunker import CodeChunk, extract_chunks
@@ -60,7 +63,7 @@ from .test_parser import parse_test_results
 
 logger = logging.getLogger(__name__)
 
-_CONTAINER_TIMEOUT_SECONDS = 30
+_CONTAINER_TIMEOUT_SECONDS = 120
 
 
 def _resolve_clone_repository():
@@ -144,6 +147,18 @@ async def run_pipeline(
     rubric_content: object,
     github_pat: str,
 ) -> None:
+    # region agent log
+    _dlog(
+        location="pipeline.py:run_pipeline:enter",
+        hypothesis_id="A,B,F",
+        message="run_pipeline entered",
+        data={
+            "submission_id": str(submission_id),
+            "assignment_id": str(assignment_id) if assignment_id else None,
+            "student_repo_path": student_repo_path,
+        },
+    )
+    # endregion
     if assignment_id is None:
         return
 
@@ -199,6 +214,12 @@ async def run_pipeline(
             },
         }
 
+        # Persist deterministic results first; status transitions are
+        # decided by whether the AI phase will run.  We deliberately
+        # do NOT mark "Completed" yet when the AI phase is queued — a
+        # transient "Completed" would let the frontend's
+        # ``TERMINAL_STATUSES`` poll guard short-circuit before AI
+        # feedback lands (status-page.component.ts).
         async with async_session_maker() as db:
             await persist_evaluation_result(
                 db,
@@ -206,14 +227,32 @@ async def run_pipeline(
                 deterministic_score=score,
                 metadata_json=metadata_json,
             )
-            await update_submission_status(db, submission_id, "Completed")
 
         # ---------------- Milestone 3: Evaluating phase ----------------
         # Runs only when Jayden's LLM wrapper is operational.  Any
         # LLM/schema failure is handled inline (mapped to
         # EVALUATION_FAILED) so it does NOT cascade into the outer
         # generic-Failed branch below.
-        if _is_llm_ready():
+        # region agent log
+        _llm_ready_value = _is_llm_ready()
+        _dlog(
+            location="pipeline.py:run_pipeline:llm_ready_gate",
+            hypothesis_id="A,B",
+            message="post-deterministic; checking LLM readiness",
+            data={
+                "submission_id": str(submission_id),
+                "is_llm_ready": _llm_ready_value,
+                "deterministic_score": score,
+                "test_count_total": (
+                    parsed.get("passed", 0) + parsed.get("failed", 0)
+                    + parsed.get("errors", 0) + parsed.get("skipped", 0)
+                ),
+                "language": language,
+                "enable_lint_review": enable_lint_review,
+            },
+        )
+        # endregion
+        if _llm_ready_value:
             await _run_evaluating_phase(
                 submission_id=submission_id,
                 student_repo_path=student_repo_path,
@@ -226,18 +265,48 @@ async def run_pipeline(
                 metadata_json=metadata_json,
             )
         else:
+            # region agent log
+            _dlog(
+                location="pipeline.py:run_pipeline:llm_not_ready",
+                hypothesis_id="A",
+                message="AI phase skipped because _is_llm_ready returned False",
+                data={"submission_id": str(submission_id)},
+            )
+            # endregion
             logger.info(
                 "run_pipeline: skipping AI phase for submission %s — "
                 "llm.complete is still the M1 stub",
                 submission_id,
             )
+            async with async_session_maker() as db:
+                await update_submission_status(db, submission_id, "Completed")
     except DuplicateEvaluationError:
+        # region agent log
+        _dlog(
+            location="pipeline.py:run_pipeline:duplicate_eval",
+            hypothesis_id="F",
+            message="DuplicateEvaluationError caught — existing result preserved",
+            data={"submission_id": str(submission_id)},
+        )
+        # endregion
         logger.info(
             "run_pipeline: duplicate evaluation for submission %s — "
             "keeping existing result and Completed status",
             submission_id,
         )
-    except Exception:
+    except Exception as _exc:
+        # region agent log
+        _dlog(
+            location="pipeline.py:run_pipeline:generic_exception",
+            hypothesis_id="B,D",
+            message="run_pipeline outer except Exception fired",
+            data={
+                "submission_id": str(submission_id),
+                "exc_type": type(_exc).__name__,
+                "exc_str": str(_exc)[:300],
+            },
+        )
+        # endregion
         logger.exception("run_pipeline failed for submission %s", submission_id)
         try:
             async with async_session_maker() as db:
@@ -303,6 +372,28 @@ async def _run_evaluating_phase(
     async with async_session_maker() as db:
         await update_submission_status(db, submission_id, "Evaluating")
 
+    # region agent log
+    _dlog(
+        location="pipeline.py:_run_evaluating_phase:enter",
+        hypothesis_id="B,C,E",
+        message="entering AI evaluating phase",
+        data={
+            "submission_id": str(submission_id),
+            "code_chunks_count": len(code_chunks),
+            "linter_violations_count": (
+                0 if linter_violations is None else len(linter_violations)
+            ),
+            "rubric_requires_style": rubric_requires_style,
+            "rubric_text_len": len(rubric_text),
+            "test_count_total": (
+                parsed.get("passed", 0) + parsed.get("failed", 0)
+                + parsed.get("errors", 0) + parsed.get("skipped", 0)
+            ),
+            "tests_in_payload": len(parsed.get("tests", []) or []),
+        },
+    )
+    # endregion
+
     try:
         pass1 = await run_pass1(
             parsed_test_results=parsed,
@@ -310,6 +401,20 @@ async def _run_evaluating_phase(
             exit_code=container_exit_code,
             resource_constraint_metadata=parsed.get("resource_constraint_metadata"),
         )
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass1_done",
+            hypothesis_id="B,C",
+            message="pass1 returned",
+            data={
+                "submission_id": str(submission_id),
+                "pass1_keys": list(pass1.keys()) if isinstance(pass1, dict) else None,
+                "pass1_failures_count": len(
+                    pass1.get("failures", []) if isinstance(pass1, dict) else []
+                ),
+            },
+        )
+        # endregion
 
         reasoning = await run_pass2(
             pass1_result=pass1,
@@ -321,6 +426,25 @@ async def _run_evaluating_phase(
             language=language,
             style_retriever=_retrieve_style_chunks,
         )
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass2_done",
+            hypothesis_id="B,C",
+            message="pass2 returned",
+            data={
+                "submission_id": str(submission_id),
+                "reasoning_keys": list(reasoning.keys()) if isinstance(reasoning, dict) else None,
+                "pass2_skipped": (
+                    reasoning.get("pass2", {}).get("skipped")
+                    if isinstance(reasoning, dict) else None
+                ),
+                "pass2_findings_count": len(
+                    (reasoning.get("pass2", {}) or {}).get("findings", [])
+                    if isinstance(reasoning, dict) else []
+                ),
+            },
+        )
+        # endregion
 
         envelope = await run_pass3(
             reasoning=reasoning,
@@ -329,7 +453,37 @@ async def _run_evaluating_phase(
             metadata=metadata_json,
             code_chunks=code_chunks,
         )
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass3_done",
+            hypothesis_id="C,D",
+            message="pass3 returned",
+            data={
+                "submission_id": str(submission_id),
+                "envelope_keys": list(envelope.keys()) if isinstance(envelope, dict) else None,
+                "criteria_scores_count": len(envelope.get("criteria_scores", []) or []),
+                "flags": envelope.get("flags", []),
+                "per_criterion_recs_counts": [
+                    len(c.get("recommendations", []) or [])
+                    for c in (envelope.get("criteria_scores", []) or [])
+                    if isinstance(c, dict)
+                ],
+            },
+        )
+        # endregion
     except EvaluationFailedError as exc:
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:evaluation_failed",
+            hypothesis_id="B,C",
+            message="EvaluationFailedError caught — schema/repair exhausted",
+            data={
+                "submission_id": str(submission_id),
+                "error_str": str(exc)[:300],
+                "validation_errors": getattr(exc, "validation_errors", None),
+            },
+        )
+        # endregion
         logger.error(
             "run_pipeline: AI passes failed schema validation for submission %s "
             "after one repair retry; marking EVALUATION_FAILED. errors=%s",
@@ -378,6 +532,19 @@ async def _run_evaluating_phase(
     terminal_status = determine_terminal_status(awaiting_review)
 
     try:
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:before_persist",
+            hypothesis_id="C,D",
+            message="about to persist ai_feedback_json + terminal status",
+            data={
+                "submission_id": str(submission_id),
+                "terminal_status": terminal_status,
+                "criteria_scores_count": len(envelope.get("criteria_scores", []) or []),
+                "flags_in_envelope": envelope.get("flags", []),
+            },
+        )
+        # endregion
         async with async_session_maker() as db:
             await update_evaluation_result(
                 db,
@@ -386,6 +553,17 @@ async def _run_evaluating_phase(
                 metadata_json=metadata_json,
             )
             await update_submission_status(db, submission_id, terminal_status)
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:after_persist",
+            hypothesis_id="C,D",
+            message="ai_feedback_json persisted; terminal status set",
+            data={
+                "submission_id": str(submission_id),
+                "terminal_status": terminal_status,
+            },
+        )
+        # endregion
     except Exception:
         # Persistence error after a successful AI run — log and bubble
         # so the outer except can decide.  We deliberately do NOT mark

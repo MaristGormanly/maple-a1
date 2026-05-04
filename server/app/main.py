@@ -38,6 +38,9 @@ from .services.assignments import parse_assignment_id, validate_assignment_exist
 from .services.git_ingest import CloneError, clone_repository
 from .services.llm import redact
 from .services.pipeline import run_pipeline
+# region agent log
+from .services._debug_log import dlog as _dlog  # debug session d6fd1e
+# endregion
 from .services.submissions import create_submission
 from .utils.responses import error_response, success_response
 
@@ -178,11 +181,40 @@ async def validate_github_repo_access(
         try:
             response = await client.get(github_api_url, headers=headers)
         except httpx.HTTPError as exc:
+            # region agent log
+            _dlog(
+                location="main.py:validate_github_repo_access:http_error",
+                hypothesis_id="G1",
+                message="GitHub repo validation request failed before response",
+                data={
+                    "owner": owner,
+                    "repo_name": repo_name,
+                    "exc_type": type(exc).__name__,
+                    "exc_str": str(exc)[:300],
+                },
+            )
+            # endregion
             raise MapleAPIError(
                 status_code=502,
                 code="EXTERNAL_SERVICE_ERROR",
                 message="Unable to reach the GitHub API to validate repository access.",
             ) from exc
+
+    # region agent log
+    _dlog(
+        location="main.py:validate_github_repo_access:response",
+        hypothesis_id="G1,G2",
+        message="GitHub repo validation response received",
+        data={
+            "owner": owner,
+            "repo_name": repo_name,
+            "status_code": response.status_code,
+            "rate_limit_remaining": response.headers.get("X-RateLimit-Remaining"),
+            "rate_limit_reset": response.headers.get("X-RateLimit-Reset"),
+            "response_preview": response.text[:200],
+        },
+    )
+    # endregion
 
     if response.status_code == 401:
         raise MapleAPIError(
@@ -242,11 +274,42 @@ async def resolve_repository_head_commit_hash(
         try:
             response = await client.get(github_api_url, headers=headers)
         except httpx.HTTPError as exc:
+            # region agent log
+            _dlog(
+                location="main.py:resolve_repository_head_commit_hash:http_error",
+                hypothesis_id="G3",
+                message="GitHub commit resolution request failed before response",
+                data={
+                    "owner": owner,
+                    "repo_name": repo_name,
+                    "branch_name": branch_name,
+                    "exc_type": type(exc).__name__,
+                    "exc_str": str(exc)[:300],
+                },
+            )
+            # endregion
             raise MapleAPIError(
                 status_code=502,
                 code="EXTERNAL_SERVICE_ERROR",
                 message="Unable to resolve the repository commit SHA from the GitHub API.",
             ) from exc
+
+    # region agent log
+    _dlog(
+        location="main.py:resolve_repository_head_commit_hash:response",
+        hypothesis_id="G3,G4",
+        message="GitHub commit resolution response received",
+        data={
+            "owner": owner,
+            "repo_name": repo_name,
+            "branch_name": branch_name,
+            "status_code": response.status_code,
+            "rate_limit_remaining": response.headers.get("X-RateLimit-Remaining"),
+            "rate_limit_reset": response.headers.get("X-RateLimit-Reset"),
+            "response_preview": response.text[:200],
+        },
+    )
+    # endregion
 
     if response.status_code == 401:
         raise MapleAPIError(
@@ -328,6 +391,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(MapleAPIError)
 async def handle_maple_api_error(_request: Request, exc: MapleAPIError) -> JSONResponse:
+    # region agent log
+    _dlog(
+        location="main.py:handle_maple_api_error",
+        hypothesis_id="H1,H2,H3",
+        message="MapleAPIError converted to HTTP response",
+        data={
+            "path": str(_request.url.path),
+            "status_code": exc.status_code,
+            "code": exc.code,
+            "message": exc.message,
+        },
+    )
+    # endregion
     return build_error_response(exc.status_code, exc.code, exc.message)
 
 
@@ -341,6 +417,19 @@ async def evaluate_submission(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SubmissionResponse:
+    # region agent log
+    _dlog(
+        location="main.py:evaluate_submission:entry",
+        hypothesis_id="H1,H2,H3",
+        message="evaluate_submission entered",
+        data={
+            "github_url": github_url,
+            "assignment_id": assignment_id,
+            "rubric_filename": getattr(rubric, "filename", None),
+            "user_role": current_user.get("role") if isinstance(current_user, dict) else None,
+        },
+    )
+    # endregion
     try:
         validated_url = _url_adapter.validate_python(github_url)
     except ValidationError:
@@ -445,6 +534,19 @@ async def evaluate_submission(
             commit_hash=cached_entry.commit_hash,
             status="Pending" if parsed_assignment_id is not None else "cached",
         )
+        # region agent log
+        _dlog(
+            location="main.py:evaluate_submission:cache_hit",
+            hypothesis_id="F",
+            message="cache hit — pipeline scheduled if assignment present",
+            data={
+                "submission_id": str(submission.id),
+                "assignment_id": str(parsed_assignment_id) if parsed_assignment_id else None,
+                "commit_hash": cached_entry.commit_hash,
+                "schedule_pipeline": parsed_assignment_id is not None,
+            },
+        )
+        # endregion
         if parsed_assignment_id is not None:
             student_abs = str(
                 (PROJECT_ROOT / Path(cached_entry.local_repo_path)).resolve()
@@ -527,6 +629,19 @@ async def evaluate_submission(
         commit_hash=commit_hash,
         status="Pending" if parsed_assignment_id is not None else "cloned",
     )
+    # region agent log
+    _dlog(
+        location="main.py:evaluate_submission:cache_miss",
+        hypothesis_id="F",
+        message="cache miss — pipeline scheduled if assignment present",
+        data={
+            "submission_id": str(submission.id),
+            "assignment_id": str(parsed_assignment_id) if parsed_assignment_id else None,
+            "commit_hash": commit_hash,
+            "schedule_pipeline": parsed_assignment_id is not None,
+        },
+    )
+    # endregion
     if parsed_assignment_id is not None:
         asyncio.create_task(
             run_pipeline(

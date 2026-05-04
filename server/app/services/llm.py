@@ -229,6 +229,31 @@ def _dispatch(
     raise ProviderError(f"Unknown provider: {spec.provider}")
 
 
+def _ordered_model_chain(preferred_model: str | None) -> list[ModelSpec]:
+    """Return ``MODEL_CHAIN`` re-ordered so *preferred_model* is first.
+
+    The remaining chain members are kept in their original order so
+    fallback semantics are unchanged. Unknown names log a warning and
+    return the chain unmodified — pass-level preferences should never
+    silently disable the fallback.
+    """
+    if not preferred_model:
+        return list(MODEL_CHAIN)
+    for idx, spec in enumerate(MODEL_CHAIN):
+        if spec.name == preferred_model:
+            return [spec, *MODEL_CHAIN[:idx], *MODEL_CHAIN[idx + 1 :]]
+    logger.warning(
+        json.dumps(
+            {
+                "event": "llm_unknown_preferred_model",
+                "preferred": preferred_model,
+                "chain": [s.name for s in MODEL_CHAIN],
+            }
+        )
+    )
+    return list(MODEL_CHAIN)
+
+
 async def complete(
     system_prompt: str,
     messages: list[dict],
@@ -236,25 +261,41 @@ async def complete(
     complexity: Literal["standard", "complex"] = "standard",
     max_tokens: int = 1024,
     temperature: float = 0.7,
+    model: str | None = None,
+    timeout: int | None = None,
 ) -> LLMResponse:
     """Send a completion request to the configured LLM provider.
 
     Walks MODEL_CHAIN; each model gets LLM_MAX_RETRIES attempts with
     exponential backoff. Raises EvaluationFailedError if all models
     are exhausted.
+
+    Args:
+        model: Optional preferred model name. When supplied and matched
+            in :data:`MODEL_CHAIN`, that model is tried first; remaining
+            chain members are still used as fallback. Unknown names are
+            ignored (a warning is logged) so callers can pass pass-level
+            preferences without coupling to chain membership.
+        timeout: Optional per-call timeout (seconds) overriding the
+            ``complexity``-based default. Used by the AI passes to
+            request "complex" timeouts (60s) for Pass 1/3 and a tighter
+            budget for Pass 2 without mutating settings.
     """
-    timeout = (
-        settings.LLM_TIMEOUT_COMPLEX
-        if complexity == "complex"
-        else settings.LLM_TIMEOUT_STANDARD
-    )
+    if timeout is None:
+        timeout = (
+            settings.LLM_TIMEOUT_COMPLEX
+            if complexity == "complex"
+            else settings.LLM_TIMEOUT_STANDARD
+        )
     max_retries = settings.LLM_MAX_RETRIES
     backoff_base = settings.LLM_BACKOFF_BASE
 
     safe_system = redact(system_prompt)
     safe_messages = [redact_dict(m) for m in messages]
 
-    for spec in MODEL_CHAIN:
+    chain = _ordered_model_chain(model)
+
+    for spec in chain:
         for attempt in range(1, max_retries + 1):
             t0 = time.monotonic()
             try:

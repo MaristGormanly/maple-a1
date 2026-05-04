@@ -40,6 +40,30 @@ def _can_view_submission(submission: Submission, current_user: dict) -> bool:
     return False
 
 
+def _flatten_criteria_recommendations(criteria_scores: list) -> list:
+    """Flatten per-criterion recommendation(s) for the AI feedback envelope.
+
+    The Pass 3 schema (``llm_schemas.CRITERIA_SCORE_SCHEMA``) emits a
+    plural ``recommendations`` array per criterion. We also tolerate a
+    singular ``recommendation`` object for backwards compatibility with
+    older payloads / fallback shapes. Order is preserved across criteria
+    so the diff viewer renders them top-down.
+    """
+    flat: list = []
+    for c in criteria_scores:
+        if not isinstance(c, dict):
+            continue
+        plural = c.get("recommendations")
+        if isinstance(plural, list):
+            for rec in plural:
+                if isinstance(rec, dict) and rec:
+                    flat.append(rec)
+        singular = c.get("recommendation")
+        if isinstance(singular, dict) and singular:
+            flat.append(singular)
+    return flat
+
+
 def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
     """Build the canonical SubmissionStatusData envelope for a submission.
 
@@ -84,11 +108,9 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
         if feedback_json and isinstance(feedback_json, dict):
             if viewer_is_privileged or review_status == "approved":
                 criteria_scores = feedback_json.get("criteria_scores") or []
-                recommendations = [
-                    c["recommendation"]
-                    for c in criteria_scores
-                    if isinstance(c, dict) and c.get("recommendation")
-                ]
+                recommendations = _flatten_criteria_recommendations(
+                    criteria_scores
+                )
                 ai_meta = feedback_json.get("metadata") or {}
                 eval_data["ai_feedback"] = {
                     "criteria_scores": criteria_scores,

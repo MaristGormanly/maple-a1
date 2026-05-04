@@ -19,6 +19,7 @@ from .docker_runner import ContainerResult as _RunnerResult
 from .docker_runner import run_container as _docker_run
 from .log_normalizer import normalize_logs
 from .sandbox_images import get_sandbox_profile
+from ..config import settings
 
 
 @dataclass(frozen=True)
@@ -41,10 +42,14 @@ def _build_shell_command(profile) -> list[str]:
 
     if profile.install_command:
         if profile.language == "python":
+            # Always install the test runner, then try project deps at root or server/.
             parts.append(
-                "test -f requirements.txt"
-                " && pip install --no-cache-dir -r requirements.txt"
-                " || true"
+                "pip install --no-cache-dir pytest"
+                " && ((test -f requirements.txt"
+                " && pip install --no-cache-dir -r requirements.txt)"
+                " || (test -f server/requirements.txt"
+                " && pip install --no-cache-dir -r server/requirements.txt)"
+                " || true)"
             )
         elif profile.language in {"javascript", "typescript"}:
             parts.append(
@@ -55,7 +60,12 @@ def _build_shell_command(profile) -> list[str]:
         else:
             parts.append(profile.install_command)
 
-    parts.append(profile.test_command)
+    # Expose server/ to sys.path so local packages (e.g. `app`) are importable
+    # without being pip-installed, covering repos with a server/ subdirectory layout.
+    if profile.language == "python":
+        parts.append("PYTHONPATH=/workspace/tests/server " + profile.test_command)
+    else:
+        parts.append(profile.test_command)
     return ["sh", "-c", " && ".join(parts)]
 
 
@@ -80,14 +90,25 @@ async def run_container(
 
     command = _build_shell_command(profile)
 
+    # Dummy env vars satisfy projects whose config layer (e.g. pydantic-settings)
+    # requires variables to be present at module import time. Tests should mock
+    # real services; these only let the module graph load.
+    sandbox_environment = {
+        "DATABASE_URL": "postgresql+asyncpg://sandbox:sandbox@localhost:5432/sandbox",
+        "SECRET_KEY": "sandbox-secret-key-not-used-for-real-auth-padding",
+        "GITHUB_PAT": "ghp_sandbox_placeholder",
+        "APP_ENV": "test",
+    }
+
     config = ContainerConfig(
         image=profile.image,
         command=command,
         volumes=volumes,
+        environment=sandbox_environment,
         working_dir=profile.working_dir,
         timeout=timeout_seconds,
-        # Network: student code must not reach the internet
-        network_disabled=True,
+        # Network: disabled in production; allowed in dev so pip can install deps.
+        network_disabled=(settings.APP_ENV == "production"),
         # Memory: cap each container at 256 MB
         mem_limit="256m",
         # CPU: 50% of one core (quota/period = 0.5)
@@ -101,8 +122,8 @@ async def run_container(
         # caches that can't be suppressed)
         read_only=True,
         tmpfs={
-            "/tmp": "size=64m,mode=1777",
-            "/root": "size=64m",
+            "/tmp": "size=256m,mode=1777",
+            "/root": "size=768m",
         },
     )
 
