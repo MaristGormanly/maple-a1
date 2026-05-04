@@ -1,6 +1,7 @@
 import { Component, ElementRef, ViewChild } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
+import { finalize } from 'rxjs';
 
 import { EvaluationService } from '../../services/evaluation.service';
 
@@ -36,7 +37,7 @@ export class SubmitPageComponent {
   constructor(
     private evaluationService: EvaluationService,
     private router: Router
-  ) {}
+  ) { }
 
   onFileChange(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -61,16 +62,24 @@ export class SubmitPageComponent {
       return;
     }
 
+    const { githubUrl, assignmentId, studentId } = this.form.getRawValue();
+
     this.submitting = true;
     this.errorMessage = null;
-
-    const { githubUrl, assignmentId, studentId } = this.form.value;
+    this.form.disable({ emitEvent: false });
 
     this.evaluationService
       .submitEvaluation(githubUrl!, assignmentId!, this.selectedFile)
+      .pipe(
+        finalize(() => {
+          this.submitting = false;
+          this.form.enable({ emitEvent: false });
+        }),
+      )
       .subscribe((response) => {
-        this.submitting = false;
         if (response.success && response.data) {
+          localStorage.setItem('maple.latestSubmissionId', response.data.submission_id);
+          localStorage.setItem('maple.latestAssignmentId', response.data.assignment_id ?? '');
           this.router.navigate(['/status', response.data.submission_id], {
             state: { data: response.data, studentLabel: studentId ?? null },
           });

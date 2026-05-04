@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
@@ -48,7 +48,8 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private evaluationService: EvaluationService,
     public router: Router,
-  ) {}
+    private cdr: ChangeDetectorRef,
+  ) { }
 
   ngOnInit(): void {
     this.submissionId = this.route.snapshot.paramMap.get('id');
@@ -58,7 +59,14 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
     if (state?.statusData) {
       this.statusData = state.statusData;
-    } else if (this.submissionId) {
+    } else if (this.data) {
+      // Seed statusData from the submit response so the UI renders the
+      // Pending badge / processing card immediately instead of stalling on
+      // "Loading submission…" until the first poll lands.
+      this.statusData = this.deriveStatusDataFromSubmit(this.data);
+    }
+
+    if (this.submissionId && this.isPolling()) {
       this.fetchStatus();
       this.pollTimer = setInterval(() => {
         if (!this.isPolling()) { this.stopPolling(); return; }
@@ -67,19 +75,35 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     }
   }
 
+  private deriveStatusDataFromSubmit(data: SubmissionData): SubmissionStatusData {
+    return {
+      submission_id: data.submission_id,
+      assignment_id: data.assignment_id,
+      student_id: '',
+      github_repo_url: data.github_url,
+      commit_hash: data.commit_hash,
+      status: data.status,
+      created_at: new Date().toISOString(),
+    };
+  }
+
   ngOnDestroy(): void { this.stopPolling(); }
 
   private fetchStatus(): void {
     if (!this.submissionId) return;
-    this.evaluationService.getSubmissionStatus(this.submissionId).subscribe((response) => {
-      if (response.success && response.data) {
-        this.statusData = response.data;
-        this.pollError = null;
-        if (!this.isPolling()) this.stopPolling();
-      } else {
-        this.pollError = response.error?.message ?? 'Failed to fetch submission status.';
-        this.stopPolling();
-      }
+    this.evaluationService.getSubmissionStatus(this.submissionId).subscribe({
+      next: (response) => {
+        if (response.success && response.data) {
+          this.statusData = response.data;
+          this.pollError = null;
+          this.cdr.detectChanges();
+          if (!this.isPolling()) this.stopPolling();
+        } else {
+          this.pollError = response.error?.message ?? 'Failed to fetch submission status.';
+          this.cdr.detectChanges();
+          this.stopPolling();
+        }
+      },
     });
   }
 
