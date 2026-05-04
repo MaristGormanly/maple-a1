@@ -2,7 +2,7 @@
   <div class="crumbs">
     <span>Submissions</span>
     <span class="crumbs__sep">/</span>
-    <strong>Live dashboard pending</strong>
+    <strong>All submissions</strong>
   </div>
   <div class="topbar__spacer"></div>
 </div>
@@ -11,9 +11,6 @@
   <div class="page-header">
     <div class="page-header__titles">
       <h1>Submissions</h1>
-      <div class="page-header__sub">
-        Live submission list endpoint pending
-      </div>
     </div>
     <div class="seg">
       <button class="seg__item" [class.seg__item--active]="view === 'table'" (click)="view = 'table'">
@@ -31,19 +28,15 @@
     </div>
   </div>
 
-  <div class="banner banner--info" role="note" style="margin-bottom:20px">
-    <span class="banner__icon"><svg width="16" height="16">
-        <use href="#icon-info" />
-      </svg></span>
+  @if (loadError) {
+  <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+    <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
     <div class="banner__copy">
-      <div class="banner__title">Dashboard list pending</div>
-      <div class="banner__body">
-        The dashboard list endpoint (<code>GET /submissions</code>) is not yet implemented. The Submit and
-        Status pages are wired to the live backend; submitted work will appear here once the list endpoint
-        ships.
-      </div>
+      <div class="banner__title">Could not load submissions</div>
+      <div class="banner__body">{{loadError}}</div>
     </div>
   </div>
+  }
 
   <!-- Filter bar -->
   <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
@@ -66,8 +59,16 @@
     </div>
   </div>
 
+  @if (loading) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">Loading submissions…</div>
+    </div>
+  </div>
+  }
+
   <!-- Empty state -->
-  @if (filtered.length === 0) {
+  @if (!loading && filtered.length === 0) {
   <div class="card">
     <div class="empty">
       <div class="empty__icon">
@@ -77,7 +78,7 @@
       </div>
       <h3>No submissions yet</h3>
       <p>
-        Submitted work will appear here once <code>GET /submissions</code> ships.
+        Submitted work will appear here once students submit their assignments.
         @if (latestAssignmentId) {
         Latest assignment: <span class="mono">{{latestAssignmentId.slice(0, 8)}}…</span>
         }

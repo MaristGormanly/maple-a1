@@ -88,6 +88,24 @@ export interface SubmissionStatusResponse {
   metadata: ResponseMetadata;
 }
 
+export interface SubmissionSummary {
+  submission_id: string;
+  assignment_id: string | null;
+  student_id: string;
+  student_email: string | null;
+  github_repo_url: string;
+  status: string;
+  created_at: string;
+  deterministic_score: number | null;
+}
+
+export interface SubmissionListResponse {
+  success: boolean;
+  data: { submissions: SubmissionSummary[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
 export interface ResponseMetadata {
   timestamp: string;
   module: string;

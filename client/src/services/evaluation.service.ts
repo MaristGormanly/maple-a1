@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
-import { ReviewRequest, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
+import { ReviewRequest, SubmissionListResponse, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
 
 @Injectable({ providedIn: 'root' })
 export class EvaluationService {
@@ -66,6 +66,23 @@ export class EvaluationService {
             },
           };
           return of(response);
+        })
+      );
+  }
+
+  getSubmissions(): Observable<SubmissionListResponse> {
+    return this.http
+      .get<SubmissionListResponse>(this.submissionsUrl)
+      .pipe(
+        catchError((err) => {
+          const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+          const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+          return of<SubmissionListResponse>({
+            success: false,
+            data: null,
+            error: { code, message },
+            metadata: { timestamp: new Date().toISOString(), module: 'a1', version: 'unknown' },
+          });
         })
       );
   }

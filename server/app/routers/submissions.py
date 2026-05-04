@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from ..models.database import get_db
 from ..models.submission import Submission
 from ..middleware.auth import get_current_user, require_role
+from ..services.submissions import list_submissions
 from ..utils.responses import error_response, success_response
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -125,6 +126,36 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
         data["evaluation"] = eval_data
 
     return data
+
+
+def _serialize_submission_summary(submission: Submission) -> dict:
+    score = None
+    if submission.evaluation_result:
+        score = submission.evaluation_result.deterministic_score
+    return {
+        "submission_id": str(submission.id),
+        "assignment_id": str(submission.assignment_id) if submission.assignment_id else None,
+        "student_id": str(submission.student_id),
+        "student_email": submission.student.email if submission.student else None,
+        "github_repo_url": submission.github_repo_url,
+        "status": submission.status,
+        "created_at": submission.created_at.isoformat() if submission.created_at else None,
+        "deterministic_score": score,
+    }
+
+
+@router.get("")
+async def list_submissions_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        user_id = uuid.UUID(str(current_user["sub"]))
+    except (KeyError, ValueError, TypeError):
+        return error_response(401, "AUTH_ERROR", "Invalid user identity.")
+    role = str(current_user.get("role", ""))
+    submissions = await list_submissions(db, role=role, user_id=user_id)
+    return success_response({"submissions": [_serialize_submission_summary(s) for s in submissions]})
 
 
 @router.get("/{submission_id}")

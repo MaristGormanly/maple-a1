@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..models.evaluation_result import EvaluationResult
 from ..models.submission import Submission
@@ -52,6 +53,26 @@ async def get_submission_by_id(
         select(Submission).where(Submission.id == submission_id)
     )
     return result.scalar_one_or_none()
+
+
+async def list_submissions(
+    db: AsyncSession,
+    *,
+    role: str,
+    user_id: uuid.UUID,
+) -> list[Submission]:
+    q = (
+        select(Submission)
+        .options(
+            selectinload(Submission.student),
+            selectinload(Submission.evaluation_result),
+        )
+        .order_by(Submission.created_at.desc())
+    )
+    if role.strip().lower() not in ("instructor", "admin"):
+        q = q.where(Submission.student_id == user_id)
+    result = await db.execute(q)
+    return list(result.scalars().all())
 
 
 async def persist_evaluation_result(
