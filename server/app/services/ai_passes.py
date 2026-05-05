@@ -433,9 +433,15 @@ async def _maybe_call_retriever(
         logger.info("ai_passes.run_pass2: no language provided to retriever; skipping RAG")
         return [], "unavailable"
 
-    raw = style_retriever(query_text=query_text, language=language)
-    if inspect.isawaitable(raw):
-        raw = await raw
+    try:
+        raw = style_retriever(query_text=query_text, language=language)
+        if inspect.isawaitable(raw):
+            raw = await raw
+    except Exception:
+        logger.exception(
+            "ai_passes.run_pass2: style retriever failed; proceeding without RAG"
+        )
+        return [], "unavailable"
 
     chunks = list(raw) if raw else []
     return chunks, "ok" if chunks else "no_match"

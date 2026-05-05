@@ -269,6 +269,29 @@ class TestIngestAll(unittest.TestCase):
         _, session = self._run_ingest(mock_fetch, mock_embed, guides=two_guides)
         self.assertEqual(session.commit.await_count, 2)
 
+    def test_serializes_embedding_literal_for_raw_sql_insert(self):
+        fake_doc = RawDocument(
+            source_title="G",
+            url="https://g.com",
+            language="python",
+            version="1.0",
+            sections=[("r", "text")],
+        )
+        mock_fetch = AsyncMock(return_value=fake_doc)
+        mock_embed = AsyncMock(return_value=[[0.1, -0.2, 3.0]])
+
+        _, session = self._run_ingest(
+            mock_fetch,
+            mock_embed,
+            guides=[STYLE_GUIDES[0]],
+        )
+
+        # First execute is DELETE, second is INSERT.
+        insert_sql, insert_params = session.execute.await_args_list[1].args
+        self.assertIn("CAST(:embedding AS vector)", str(insert_sql))
+        self.assertEqual(insert_params["embedding"], "[0.1,-0.2,3.0]")
+        self.assertIsInstance(insert_params["embedding"], str)
+
 
 if __name__ == "__main__":
     unittest.main()
