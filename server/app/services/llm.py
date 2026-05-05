@@ -95,7 +95,7 @@ class ModelSpec:
 
 MODEL_CHAIN: list[ModelSpec] = [
     ModelSpec(name="gemini-3.1-pro-preview", provider="gemini"),
-    ModelSpec(name="gemini-3.1-flash-lite", provider="gemini"),
+    ModelSpec(name="gemini-3.1-flash-lite-preview", provider="gemini"),
     ModelSpec(name="gpt-4o", provider="openai"),
 ]
 
@@ -104,7 +104,7 @@ MODEL_CHAIN: list[ModelSpec] = [
 # authoritative billing. Tuple = (input_per_1k, output_per_1k).
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "gemini-3.1-pro-preview": (0.00125, 0.01000),
-    "gemini-3.1-flash-lite":  (0.00010, 0.00040),
+    "gemini-3.1-flash-lite-preview": (0.00010, 0.00040),
     "gpt-4o":                 (0.00250, 0.01000),
 }
 
@@ -338,6 +338,7 @@ async def complete(
                                 "attempt": attempt,
                                 "latency_ms": latency_ms,
                                 "error_type": error_type,
+                                "error": str(exc)[:300],
                                 "status": "retry",
                             }
                         )
@@ -354,7 +355,8 @@ async def complete(
                                 "attempt": attempt,
                                 "latency_ms": latency_ms,
                                 "error_type": error_type,
-                                "status": "retry",
+                                "error": str(exc)[:300],
+                                "status": "final_failure",
                             }
                         )
                     )

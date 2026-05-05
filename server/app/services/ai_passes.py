@@ -285,7 +285,7 @@ async def run_pass1(
 # Pass 2 — Style and Maintainability Review
 # ---------------------------------------------------------------------------
 
-PASS2_MODEL: str = "gemini-3.1-flash-lite"
+PASS2_MODEL: str = "gemini-3.1-flash-lite-preview"
 PASS2_TIMEOUT_SECONDS: int = 30  # "standard" call per M3 tasks #2
 PASS2_MAX_TOKENS: int = 2048
 PASS2_TEMPERATURE: float = 0.2
