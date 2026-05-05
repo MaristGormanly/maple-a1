@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { AssignmentService } from '../../services/assignment.service';
@@ -40,6 +40,7 @@ export class AssignmentDetailPageComponent implements OnInit {
     public router: Router,
     private assignmentService: AssignmentService,
     private evalService: EvaluationService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
   ngOnInit(): void {
@@ -52,9 +53,9 @@ export class AssignmentDetailPageComponent implements OnInit {
 
       if (!assignment.success || !assignment.data) {
         this.loadError = assignment.error?.message ?? 'Assignment not found.';
-        return;
+      } else {
+        this.assignment = assignment.data;
       }
-      this.assignment = assignment.data;
 
       if (submissions.success && submissions.data) {
         this.submissions = submissions.data.submissions
@@ -68,6 +69,8 @@ export class AssignmentDetailPageComponent implements OnInit {
             submitted: formatDate(s.created_at),
           }));
       }
+
+      this.cdr.detectChanges();
     });
   }
 

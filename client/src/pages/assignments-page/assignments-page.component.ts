@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AssignmentService } from '../../services/assignment.service';
 import { AssignmentData } from '../../utils/api.types';
@@ -15,16 +15,21 @@ export class AssignmentsPageComponent implements OnInit {
   loadError: string | null = null;
   searchQuery = '';
 
-  constructor(private router: Router, private assignmentService: AssignmentService) {}
+  constructor(
+    private router: Router,
+    private assignmentService: AssignmentService,
+    private cdr: ChangeDetectorRef,
+  ) {}
 
   ngOnInit(): void {
     this.assignmentService.getAll().subscribe((res) => {
       this.loading = false;
       if (!res.success || !res.data) {
         this.loadError = res.error?.message ?? 'Failed to load assignments.';
-        return;
+      } else {
+        this.allAssignments = res.data.assignments;
       }
-      this.allAssignments = res.data.assignments;
+      this.cdr.detectChanges();
     });
   }
 
