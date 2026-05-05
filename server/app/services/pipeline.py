@@ -168,6 +168,13 @@ async def run_pipeline(
             if await update_submission_status(db, submission_id, "Testing") is None:
                 logger.warning("run_pipeline: submission %s not found", submission_id)
                 return
+            _dlog(
+                location="pipeline.py:run_pipeline:status_set_testing",
+                hypothesis_id="A,B,F",
+                message="status set to Testing",
+                data={"submission_id": str(submission_id)},
+                run_id=str(submission_id)[:8],
+            )
             assignment = await get_assignment_by_id(db, assignment_id)
             if assignment is None:
                 await update_submission_status(db, submission_id, "Failed")
@@ -178,9 +185,28 @@ async def run_pipeline(
                 return
             language_override = assignment.language_override
             enable_lint_review = bool(assignment.enable_lint_review)
+            _dlog(
+                location="pipeline.py:run_pipeline:assignment_resolved",
+                hypothesis_id="A,B",
+                message="assignment loaded",
+                data={
+                    "submission_id": str(submission_id),
+                    "suite_url": suite_url,
+                    "language_override": language_override,
+                    "enable_lint_review": enable_lint_review,
+                },
+                run_id=str(submission_id)[:8],
+            )
 
         test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
         clone_impl = _resolve_clone_repository()
+        _dlog(
+            location="pipeline.py:run_pipeline:clone_start",
+            hypothesis_id="A,B",
+            message="about to clone test suite",
+            data={"submission_id": str(submission_id), "suite_url": suite_url},
+            run_id=str(submission_id)[:8],
+        )
         try:
             await clone_impl(suite_url, test_suite_dir, github_pat)
         except CloneError as exc:
@@ -188,14 +214,47 @@ async def run_pipeline(
             logger.error("run_pipeline: test suite clone failed: %s", exc.message)
             await update_submission_status(db, submission_id, "Failed")
             return
+        _dlog(
+            location="pipeline.py:run_pipeline:clone_done",
+            hypothesis_id="A,B",
+            message="test suite cloned successfully",
+            data={
+                "submission_id": str(submission_id),
+                "test_suite_dir": str(test_suite_dir),
+            },
+            run_id=str(submission_id)[:8],
+        )
 
         lang = detect_language_version(student_repo_path, language_override)
         language = lang.get("language", "")
+        _dlog(
+            location="pipeline.py:run_pipeline:container_start",
+            hypothesis_id="A,B",
+            message="about to run student container",
+            data={
+                "submission_id": str(submission_id),
+                "language": language,
+                "timeout_seconds": _CONTAINER_TIMEOUT_SECONDS,
+            },
+            run_id=str(submission_id)[:8],
+        )
         container = await run_container(
             language,
             student_repo_path,
             str(test_suite_dir.resolve()),
             timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+        )
+        _dlog(
+            location="pipeline.py:run_pipeline:container_done",
+            hypothesis_id="A,B",
+            message="container finished",
+            data={
+                "submission_id": str(submission_id),
+                "exit_code": container.exit_code,
+                "stdout_len": len(container.stdout or ""),
+                "stderr_len": len(container.stderr or ""),
+            },
+            run_id=str(submission_id)[:8],
         )
 
         parsed = parse_test_results(container.stdout, container.stderr, container.exit_code)
@@ -227,6 +286,16 @@ async def run_pipeline(
                 deterministic_score=score,
                 metadata_json=metadata_json,
             )
+        _dlog(
+            location="pipeline.py:run_pipeline:deterministic_persisted",
+            hypothesis_id="A,B",
+            message="deterministic result persisted",
+            data={
+                "submission_id": str(submission_id),
+                "deterministic_score": score,
+            },
+            run_id=str(submission_id)[:8],
+        )
 
         # ---------------- Milestone 3: Evaluating phase ----------------
         # Runs only when Jayden's LLM wrapper is operational.  Any

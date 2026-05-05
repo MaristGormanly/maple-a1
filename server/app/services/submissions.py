@@ -262,3 +262,28 @@ async def update_submission_status(
     await db.commit()
     await db.refresh(submission)
     return submission
+
+
+async def recover_orphaned_submissions() -> int:
+    """Mark any mid-pipeline submissions as Failed at server startup.
+
+    Submissions left in 'Testing' or 'Evaluating' after a crash or
+    reload will never advance on their own. This resets them so the
+    frontend stops polling.
+
+    Returns the number of submissions recovered.
+    """
+    from ..models.database import async_session_maker
+
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(Submission).where(
+                Submission.status.in_(["Testing", "Evaluating"])
+            )
+        )
+        orphans = list(result.scalars().all())
+        for sub in orphans:
+            sub.status = "Failed"
+        if orphans:
+            await db.commit()
+        return len(orphans)

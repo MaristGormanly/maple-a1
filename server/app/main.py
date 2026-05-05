@@ -1,15 +1,19 @@
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
@@ -41,7 +45,7 @@ from .services.pipeline import run_pipeline
 # region agent log
 from .services._debug_log import dlog as _dlog  # debug session d6fd1e
 # endregion
-from .services.submissions import create_submission
+from .services.submissions import create_submission, recover_orphaned_submissions
 from .utils.responses import error_response, success_response
 
 APP_VERSION = "1.0.0"
@@ -344,12 +348,24 @@ async def resolve_repository_head_commit_hash(
     return commit_hash
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    count = await recover_orphaned_submissions()
+    if count:
+        logger.warning(
+            "startup: recovered %d orphaned submission(s) stuck in Testing/Evaluating → Failed",
+            count,
+        )
+    yield
+
+
 app = FastAPI(
     title="MAPLE A1 Code Evaluator",
     description="Automated code evaluation system for Marist College",
     version=APP_VERSION,
     docs_url="/api/v1/code-eval/docs",
     openapi_url="/api/v1/code-eval/openapi.json",
+    lifespan=lifespan,
 )
 
 # Configure CORS
