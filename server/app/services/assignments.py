@@ -1,9 +1,10 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.assignment import Assignment
+from ..models.submission import Submission
 
 
 def parse_assignment_id(raw: str) -> uuid.UUID:
@@ -41,6 +42,31 @@ async def validate_assignment_exists(
     if assignment is None:
         raise ValueError(f"Assignment '{assignment_id}' does not exist")
     return assignment
+
+
+async def list_assignments(
+    db: AsyncSession,
+    *,
+    instructor_id: uuid.UUID,
+    role: str,
+) -> list[tuple]:
+    """Return all assignments visible to the caller, with submission counts.
+
+    Instructors see only their own assignments. Admins see all.
+    Each element is a (Assignment, int) tuple where the int is the
+    count of submissions for that assignment.
+    """
+    count_sub = (
+        select(func.count())
+        .where(Submission.assignment_id == Assignment.id)
+        .correlate(Assignment)
+        .scalar_subquery()
+    )
+    q = select(Assignment, count_sub.label("submission_count")).order_by(Assignment.title)
+    if role.strip().lower() not in ("admin",):
+        q = q.where(Assignment.instructor_id == instructor_id)
+    result = await db.execute(q)
+    return result.all()
 
 
 async def create_assignment(

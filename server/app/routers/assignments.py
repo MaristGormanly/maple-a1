@@ -10,6 +10,7 @@ from ..models.database import get_db
 from ..services.assignments import (
     create_assignment,
     get_assignment_by_id,
+    list_assignments,
     parse_assignment_id,
 )
 from ..utils.responses import error_response, success_response
@@ -25,7 +26,7 @@ class AssignmentCreateRequest(BaseModel):
     language_override: Optional[str] = None
 
 
-def _assignment_to_dict(a) -> dict:
+def _assignment_to_dict(a, submission_count: int = 0) -> dict:
     return {
         "assignment_id": str(a.id),
         "title": a.title,
@@ -34,7 +35,24 @@ def _assignment_to_dict(a) -> dict:
         "rubric_id": str(a.rubric_id) if a.rubric_id else None,
         "enable_lint_review": a.enable_lint_review,
         "language_override": a.language_override,
+        "submission_count": submission_count,
     }
+
+
+@router.get("")
+async def list_assignments_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    instructor_id = uuid.UUID(current_user["sub"])
+    role = current_user.get("role", "")
+    rows = await list_assignments(db, instructor_id=instructor_id, role=role)
+    return success_response({
+        "assignments": [
+            _assignment_to_dict(assignment, int(count))
+            for assignment, count in rows
+        ]
+    })
 
 
 @router.post("")

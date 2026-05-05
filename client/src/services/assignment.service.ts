@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
+import { AssignmentListResponse, AssignmentDetailResponse } from '../utils/api.types';
 
 export interface AssignmentCreateRequest {
   title: string;
@@ -35,6 +36,12 @@ export class AssignmentService {
 
   private readonly url = `${environment.apiBaseUrl}/api/v1/code-eval/assignments`;
 
+  private readonly _errMeta = () => ({
+    timestamp: new Date().toISOString(),
+    module: 'a1',
+    version: 'unknown',
+  });
+
   create(request: AssignmentCreateRequest): Observable<AssignmentResponse> {
     return this.http.post<AssignmentResponse>(this.url, request).pipe(
       catchError((err) => {
@@ -45,13 +52,39 @@ export class AssignmentService {
           success: false,
           data: null,
           error: { code, message },
-          metadata: {
-            timestamp: new Date().toISOString(),
-            module: 'a1',
-            version: 'unknown',
-          },
+          metadata: this._errMeta(),
         };
         return of(response);
+      }),
+    );
+  }
+
+  getAll(): Observable<AssignmentListResponse> {
+    return this.http.get<AssignmentListResponse>(this.url).pipe(
+      catchError((err) => {
+        const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        return of<AssignmentListResponse>({
+          success: false,
+          data: null,
+          error: { code, message },
+          metadata: this._errMeta(),
+        });
+      }),
+    );
+  }
+
+  getById(id: string): Observable<AssignmentDetailResponse> {
+    return this.http.get<AssignmentDetailResponse>(`${this.url}/${id}`).pipe(
+      catchError((err) => {
+        const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        return of<AssignmentDetailResponse>({
+          success: false,
+          data: null,
+          error: { code, message },
+          metadata: this._errMeta(),
+        });
       }),
     );
   }

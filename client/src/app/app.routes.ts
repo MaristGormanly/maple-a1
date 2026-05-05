@@ -5,6 +5,8 @@ import { DashboardPageComponent } from '../pages/dashboard-page/dashboard-page.c
 import { SubmitPageComponent } from '../pages/submit-page/submit-page.component';
 import { StatusPageComponent } from '../pages/status-page/status-page.component';
 import { AssignmentPageComponent } from '../pages/assignment-page/assignment-page.component';
+import { AssignmentsPageComponent } from '../pages/assignments-page/assignments-page.component';
+import { AssignmentDetailPageComponent } from '../pages/assignment-detail-page/assignment-detail-page.component';
 import { authGuard } from '../guards/auth.guard';
 
 export const routes: Routes = [
@@ -19,6 +21,8 @@ export const routes: Routes = [
       { path: 'submit', component: SubmitPageComponent },
       { path: 'status/:id', component: StatusPageComponent },
       { path: 'assignment', component: AssignmentPageComponent },
+      { path: 'assignments', component: AssignmentsPageComponent },
+      { path: 'assignments/:id', component: AssignmentDetailPageComponent },
     ],
   },
   { path: '**', redirectTo: 'dashboard' },

@@ -1,0 +1,182 @@
+<div class="topbar">
+  <button class="btn btn--ghost btn--sm" (click)="router.navigate(['/assignments'])">
+    ← Back
+  </button>
+  <div class="crumbs">
+    <a routerLink="/assignments" style="color:var(--ink-3);text-decoration:none">Assignments</a>
+    <span class="crumbs__sep">/</span>
+    <strong>{{assignment?.title ?? '…'}}</strong>
+  </div>
+  <div class="topbar__spacer"></div>
+</div>
+
+<div class="page page--wide">
+
+  @if (loadError) {
+  <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+    <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
+    <div class="banner__copy">
+      <div class="banner__title">Could not load assignment</div>
+      <div class="banner__body">{{loadError}}</div>
+    </div>
+  </div>
+  }
+
+  @if (loading) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">Loading…</div>
+    </div>
+  </div>
+  }
+
+  @if (!loading && assignment) {
+
+  <!-- Assignment info card -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="card__body">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px">
+        <div>
+          <h2 style="font-size:20px;font-weight:700;color:var(--ink);margin:0 0 4px">{{assignment.title}}</h2>
+          <div class="muted" style="font-size:12px;font-family:var(--font-mono)">
+            {{assignment.assignment_id.slice(0, 8)}}…
+          </div>
+        </div>
+        @if (assignment.enable_lint_review) {
+        <span class="badge badge--green"><span class="badge__dot"></span>Lint review on</span>
+        } @else {
+        <span class="badge badge--neutral">Lint review off</span>
+        }
+      </div>
+
+      <div class="stats-row stats-row--3">
+        <div class="stat-cell">
+          <div class="stat-cell__label">Test suite</div>
+          <div class="stat-cell__value mono"
+            style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">
+            {{assignment.test_suite_repo_url ?? '—'}}
+          </div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-cell__label">Language</div>
+          <div class="stat-cell__value">{{assignment.language_override ?? 'Auto-detect'}}</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-cell__label">Submissions</div>
+          <div class="stat-cell__value">{{submissions.length}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Submissions section -->
+  <div class="page-header" style="margin-bottom:16px">
+    <div class="page-header__titles">
+      <h2 style="font-size:18px;font-weight:600;margin:0">
+        Submissions
+        @if (submissions.length > 0) {
+        <span class="section-title__count" style="font-size:13px;font-weight:400;margin-left:6px">
+          ({{submissions.length}})
+        </span>
+        }
+      </h2>
+    </div>
+    <div class="input-wrap" style="width:300px">
+      <span class="input-wrap__adorn">
+        <svg width="14" height="14"><use href="#icon-search" /></svg>
+      </span>
+      <input class="input" placeholder="Filter submissions…" [value]="searchQuery"
+        (input)="searchQuery = $any($event.target).value" />
+    </div>
+  </div>
+
+  @if (submissions.length === 0) {
+  <div class="card">
+    <div class="empty">
+      <div class="empty__icon">
+        <svg width="24" height="24"><use href="#icon-clipboard" /></svg>
+      </div>
+      <h3>No submissions yet</h3>
+      <p>No students have submitted for this assignment.</p>
+      <button class="btn btn--primary btn--sm" (click)="router.navigate(['/submit'])">
+        <svg width="13" height="13"><use href="#icon-submit" /></svg>
+        New submission
+      </button>
+    </div>
+  </div>
+  }
+
+  @if (filteredSubmissions.length > 0) {
+  <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Submission</th>
+          <th>Repository</th>
+          <th style="width:150px">Status</th>
+          <th style="width:90px">Score</th>
+          <th style="width:120px">Submitted</th>
+          <th style="width:120px;text-align:right;padding-right:30px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of filteredSubmissions; track r.id) {
+        <tr (click)="viewSubmission(r)" style="cursor:pointer">
+          <td>
+            <div class="student-cell">
+              <span class="avatar avatar--sm"
+                [style.background]="avatarColor(r.student.tint)">{{r.student.initials}}</span>
+              <div>
+                <div class="student-cell__name">{{r.student.name}}</div>
+                <div class="student-cell__email">{{r.student.email}}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="sid">
+              <span class="mono">{{r.id.slice(0, 8)}}…</span>
+            </span>
+          </td>
+          <td class="mono"
+            style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{r.github}}
+          </td>
+          <td>
+            <span class="badge"
+              [class.badge--green]="badgeTone(displayStatus(r.status)) === 'green'"
+              [class.badge--amber]="badgeTone(displayStatus(r.status)) === 'amber'"
+              [class.badge--red]="badgeTone(displayStatus(r.status)) === 'red'"
+              [class.badge--blue]="badgeTone(displayStatus(r.status)) === 'blue'"
+              [class.badge--neutral]="badgeTone(displayStatus(r.status)) === 'neutral'">
+              <span class="badge__dot"></span>{{displayStatus(r.status)}}
+            </span>
+          </td>
+          <td class="table__score">
+            @if (r.score !== null) { {{r.score}} } @else { <span class="muted">—</span> }
+          </td>
+          <td class="mono" style="color:var(--ink-3);font-size:12px">{{r.submitted}}</td>
+          <td>
+            <div class="table__actions" (click)="$event.stopPropagation()">
+              <button class="btn btn--ghost btn--sm" (click)="viewSubmission(r)">
+                View <svg width="12" height="12"><use href="#icon-chevron" /></svg>
+              </button>
+            </div>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  }
+
+  @if (filteredSubmissions.length === 0 && submissions.length > 0) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">No submissions match your filter.</div>
+    </div>
+  </div>
+  }
+
+  }
+</div>

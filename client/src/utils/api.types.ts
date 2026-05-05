@@ -128,3 +128,28 @@ export interface ReviewRequest {
   action: 'approve' | 'reject';
   instructor_notes?: string;
 }
+
+export interface AssignmentData {
+  assignment_id: string;
+  title: string;
+  instructor_id: string;
+  test_suite_repo_url: string | null;
+  rubric_id: string | null;
+  enable_lint_review: boolean;
+  language_override: string | null;
+  submission_count: number;
+}
+
+export interface AssignmentListResponse {
+  success: boolean;
+  data: { assignments: AssignmentData[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface AssignmentDetailResponse {
+  success: boolean;
+  data: AssignmentData | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
