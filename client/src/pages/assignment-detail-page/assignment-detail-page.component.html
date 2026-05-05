@@ -5,24 +5,24 @@
   <div class="crumbs">
     <a routerLink="/assignments" style="color:var(--ink-3);text-decoration:none">Assignments</a>
     <span class="crumbs__sep">/</span>
-    <strong>{{assignment?.title ?? '…'}}</strong>
+    <strong>{{assignment()?.title ?? '…'}}</strong>
   </div>
   <div class="topbar__spacer"></div>
 </div>
 
 <div class="page page--wide">
 
-  @if (loadError) {
+  @if (loadError()) {
   <div class="banner banner--error" role="alert" style="margin-bottom:20px">
     <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
     <div class="banner__copy">
       <div class="banner__title">Could not load assignment</div>
-      <div class="banner__body">{{loadError}}</div>
+      <div class="banner__body">{{loadError()}}</div>
     </div>
   </div>
   }
 
-  @if (loading) {
+  @if (loading()) {
   <div class="card">
     <div class="empty">
       <div class="muted" style="font-size:13px">Loading…</div>
@@ -30,19 +30,19 @@
   </div>
   }
 
-  @if (!loading && assignment) {
+  @if (!loading() && assignment()) {
 
   <!-- Assignment info card -->
   <div class="card" style="margin-bottom:24px">
     <div class="card__body">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px">
         <div>
-          <h2 style="font-size:20px;font-weight:700;color:var(--ink);margin:0 0 4px">{{assignment.title}}</h2>
+          <h2 style="font-size:20px;font-weight:700;color:var(--ink);margin:0 0 4px">{{assignment()!.title}}</h2>
           <div class="muted" style="font-size:12px;font-family:var(--font-mono)">
-            {{assignment.assignment_id.slice(0, 8)}}…
+            {{assignment()!.assignment_id.slice(0, 8)}}…
           </div>
         </div>
-        @if (assignment.enable_lint_review) {
+        @if (assignment()!.enable_lint_review) {
         <span class="badge badge--green"><span class="badge__dot"></span>Lint review on</span>
         } @else {
         <span class="badge badge--neutral">Lint review off</span>
@@ -54,16 +54,16 @@
           <div class="stat-cell__label">Test suite</div>
           <div class="stat-cell__value mono"
             style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">
-            {{assignment.test_suite_repo_url ?? '—'}}
+            {{assignment()!.test_suite_repo_url ?? '—'}}
           </div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell__label">Language</div>
-          <div class="stat-cell__value">{{assignment.language_override ?? 'Auto-detect'}}</div>
+          <div class="stat-cell__value">{{assignment()!.language_override ?? 'Auto-detect'}}</div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell__label">Submissions</div>
-          <div class="stat-cell__value">{{submissions.length}}</div>
+          <div class="stat-cell__value">{{submissions().length}}</div>
         </div>
       </div>
     </div>
@@ -74,9 +74,9 @@
     <div class="page-header__titles">
       <h2 style="font-size:18px;font-weight:600;margin:0">
         Submissions
-        @if (submissions.length > 0) {
+        @if (submissions().length > 0) {
         <span class="section-title__count" style="font-size:13px;font-weight:400;margin-left:6px">
-          ({{submissions.length}})
+          ({{submissions().length}})
         </span>
         }
       </h2>
@@ -85,12 +85,12 @@
       <span class="input-wrap__adorn">
         <svg width="14" height="14"><use href="#icon-search" /></svg>
       </span>
-      <input class="input" placeholder="Filter submissions…" [value]="searchQuery"
-        (input)="searchQuery = $any($event.target).value" />
+      <input class="input" placeholder="Filter submissions…" [value]="searchQuery()"
+        (input)="onSearch($event)" />
     </div>
   </div>
 
-  @if (submissions.length === 0) {
+  @if (submissions().length === 0) {
   <div class="card">
     <div class="empty">
       <div class="empty__icon">
@@ -106,7 +106,7 @@
   </div>
   }
 
-  @if (filteredSubmissions.length > 0) {
+  @if (filteredSubmissions().length > 0) {
   <div class="table-wrap" style="border-width:1px 2px 1px 5px">
     <table class="table">
       <thead>
@@ -121,7 +121,7 @@
         </tr>
       </thead>
       <tbody>
-        @for (r of filteredSubmissions; track r.id) {
+        @for (r of filteredSubmissions(); track r.id) {
         <tr (click)="viewSubmission(r)" style="cursor:pointer">
           <td>
             <div class="student-cell">
@@ -143,12 +143,7 @@
             {{r.github}}
           </td>
           <td>
-            <span class="badge"
-              [class.badge--green]="badgeTone(displayStatus(r.status)) === 'green'"
-              [class.badge--amber]="badgeTone(displayStatus(r.status)) === 'amber'"
-              [class.badge--red]="badgeTone(displayStatus(r.status)) === 'red'"
-              [class.badge--blue]="badgeTone(displayStatus(r.status)) === 'blue'"
-              [class.badge--neutral]="badgeTone(displayStatus(r.status)) === 'neutral'">
+            <span [class]="badgeClass(r.status)">
               <span class="badge__dot"></span>{{displayStatus(r.status)}}
             </span>
           </td>
@@ -170,7 +165,7 @@
   </div>
   }
 
-  @if (filteredSubmissions.length === 0 && submissions.length > 0) {
+  @if (filteredSubmissions().length === 0 && submissions().length > 0) {
   <div class="card">
     <div class="empty">
       <div class="muted" style="font-size:13px">No submissions match your filter.</div>
