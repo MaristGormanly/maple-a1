@@ -39,7 +39,7 @@
         <div>
           <h2 style="font-size:20px;font-weight:700;color:var(--ink);margin:0 0 4px">{{assignment()!.title}}</h2>
           <div class="muted" style="font-size:12px;font-family:var(--font-mono)">
-            {{assignment()!.assignment_id.slice(0, 8)}}…
+            {{assignment()!.assignment_id}}
           </div>
         </div>
         @if (assignment()!.enable_lint_review) {
