@@ -22,6 +22,9 @@
     Polling…
   </div>
   }
+  @if (submissionId) {
+  <button class="btn btn--outline-danger btn--sm" (click)="onDeleteOpen()">Delete</button>
+  }
 </div>
 
 <div class="page">
@@ -230,3 +233,12 @@
   }
 
 </div>
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog"
+  title="Delete submission?"
+  message="The submission and its evaluation result will be permanently removed."
+  confirmLabel="Delete submission"
+  [loading]="deleteLoading"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="onDeleteCancelled()" />

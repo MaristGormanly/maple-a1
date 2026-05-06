@@ -55,6 +55,18 @@ async def get_submission_by_id(
     return result.scalar_one_or_none()
 
 
+async def delete_submission(
+    db: AsyncSession,
+    submission_id: uuid.UUID,
+) -> bool:
+    submission = await get_submission_by_id(db, submission_id)
+    if submission is None:
+        return False
+    await db.delete(submission)
+    await db.commit()
+    return True
+
+
 async def list_submissions(
     db: AsyncSession,
     *,

@@ -9,6 +9,7 @@ from ..middleware.auth import get_current_user, require_role
 from ..models.database import get_db
 from ..services.assignments import (
     create_assignment,
+    delete_assignment,
     get_assignment_by_id,
     list_assignments,
     parse_assignment_id,
@@ -111,3 +112,30 @@ async def get_assignment_endpoint(
         )
 
     return success_response(_assignment_to_dict(assignment))
+
+
+@router.delete("/{assignment_id}", status_code=200)
+async def delete_assignment_endpoint(
+    assignment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role("Instructor")),
+):
+    try:
+        aid = parse_assignment_id(assignment_id)
+    except ValueError:
+        return error_response(400, "VALIDATION_ERROR", "assignment_id must be a valid UUID")
+
+    assignment = await get_assignment_by_id(db, aid)
+    if not assignment:
+        return error_response(404, "NOT_FOUND", f"Assignment '{assignment_id}' not found")
+
+    try:
+        current_user_id = uuid.UUID(str(current_user["sub"]))
+    except (KeyError, ValueError, TypeError):
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+
+    if assignment.instructor_id != current_user_id:
+        return error_response(403, "FORBIDDEN", "You do not own this assignment")
+
+    await delete_assignment(db, aid)
+    return success_response({"deleted": assignment_id})

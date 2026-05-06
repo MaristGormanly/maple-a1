@@ -52,25 +52,30 @@ def detect_language_version(
 
 def _detect_python(root: Path) -> dict | None:
     pyproject = root / "pyproject.toml"
-    if not pyproject.is_file():
-        return None
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception:
+    if pyproject.is_file():
+        try:
+            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        except Exception:
+            return {"language": "python", "version": None, "source": "pyproject.toml"}
+
+        req = (data.get("project") or {}).get("requires-python")
+        if req:
+            return {"language": "python", "version": req, "source": "pyproject.toml"}
+
+        poetry_deps = (
+            (data.get("tool") or {}).get("poetry") or {}
+        ).get("dependencies") or {}
+        py_ver = poetry_deps.get("python")
+        if py_ver:
+            return {"language": "python", "version": py_ver, "source": "pyproject.toml"}
+
         return {"language": "python", "version": None, "source": "pyproject.toml"}
 
-    req = (data.get("project") or {}).get("requires-python")
-    if req:
-        return {"language": "python", "version": req, "source": "pyproject.toml"}
+    for marker in ("setup.cfg", "setup.py", "requirements.txt"):
+        if (root / marker).is_file():
+            return {"language": "python", "version": None, "source": marker}
 
-    poetry_deps = (
-        (data.get("tool") or {}).get("poetry") or {}
-    ).get("dependencies") or {}
-    py_ver = poetry_deps.get("python")
-    if py_ver:
-        return {"language": "python", "version": py_ver, "source": "pyproject.toml"}
-
-    return {"language": "python", "version": None, "source": "pyproject.toml"}
+    return None
 
 
 def _detect_node(root: Path) -> dict | None:

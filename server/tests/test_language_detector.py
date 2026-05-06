@@ -103,6 +103,32 @@ class DetectLanguageVersionTests(unittest.TestCase):
         self.assertEqual(result["source"], "language_override")
         self.assertTrue(result["override_applied"])
 
+    # ---- Python fallback markers ----
+
+    def test_python_requirements_txt(self) -> None:
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "requirements.txt").write_text("pytest>=7\n", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "python")
+        self.assertIsNone(result["version"])
+        self.assertEqual(result["source"], "requirements.txt")
+
+    def test_python_setup_py(self) -> None:
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "setup.py").write_text("from setuptools import setup\nsetup()\n", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "python")
+        self.assertIsNone(result["version"])
+        self.assertEqual(result["source"], "setup.py")
+
+    def test_python_setup_cfg(self) -> None:
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "setup.cfg").write_text("[metadata]\nname = demo\n", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "python")
+        self.assertIsNone(result["version"])
+        self.assertEqual(result["source"], "setup.cfg")
+
     # ---- empty directory ----
 
     def test_empty_directory_returns_unknown(self) -> None:

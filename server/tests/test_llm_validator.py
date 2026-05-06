@@ -200,5 +200,51 @@ class ValidateAndRepairFailureTests(unittest.TestCase):
             )
 
 
+class ValidateAndRepairSanitizeFnTests(unittest.TestCase):
+    def test_sanitize_fn_applied_on_valid_first_output(self) -> None:
+        """sanitize_fn is applied before validation, fixing values that would fail."""
+        calls: list[dict] = []
+
+        def _uppercaser(instance: dict) -> dict:
+            calls.append(instance)
+            if isinstance(instance.get("summary"), str):
+                instance["summary"] = instance["summary"].upper()
+            return instance
+
+        result = _run(
+            validate_and_repair(
+                _VALID_PASS1_JSON,
+                PASS1_OUTPUT_SCHEMA,
+                _failing_llm_should_not_be_called,
+                repair_prompt="Fix.",
+                sanitize_fn=_uppercaser,
+            )
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["summary"], _VALID_PASS1["summary"].upper())
+
+    def test_sanitize_fn_applied_on_repair_output(self) -> None:
+        """sanitize_fn is also applied to the repair output, not just the initial attempt."""
+        sanitize_calls = 0
+
+        def _counter(instance: dict) -> dict:
+            nonlocal sanitize_calls
+            sanitize_calls += 1
+            return instance
+
+        mock_llm = _RecordingLLM(response=_VALID_PASS1_JSON)
+        _run(
+            validate_and_repair(
+                "not json",
+                PASS1_OUTPUT_SCHEMA,
+                mock_llm,
+                repair_prompt="Fix.",
+                sanitize_fn=_counter,
+            )
+        )
+        # Called once for the repair output (initial parse fails before sanitize_fn runs)
+        self.assertEqual(sanitize_calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

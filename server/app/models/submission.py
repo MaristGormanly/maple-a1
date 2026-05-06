@@ -27,5 +27,6 @@ class Submission(Base):
     assignment = relationship("Assignment", back_populates="submissions")
     student = relationship("User", back_populates="submissions")
     evaluation_result = relationship(
-        "EvaluationResult", back_populates="submission", uselist=False
+        "EvaluationResult", back_populates="submission", uselist=False,
+        cascade="all, delete-orphan", passive_deletes=True,
     )

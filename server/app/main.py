@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 import httpx

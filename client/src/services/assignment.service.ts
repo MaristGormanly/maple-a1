@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
-import { AssignmentListResponse, AssignmentDetailResponse } from '../utils/api.types';
+import { AssignmentListResponse, AssignmentDetailResponse, DeleteResponse } from '../utils/api.types';
 
 export interface AssignmentCreateRequest {
   title: string;
@@ -80,6 +80,21 @@ export class AssignmentService {
         const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
         const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
         return of<AssignmentDetailResponse>({
+          success: false,
+          data: null,
+          error: { code, message },
+          metadata: this._errMeta(),
+        });
+      }),
+    );
+  }
+
+  delete(id: string): Observable<DeleteResponse> {
+    return this.http.delete<DeleteResponse>(`${this.url}/${id}`).pipe(
+      catchError((err) => {
+        const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        return of<DeleteResponse>({
           success: false,
           data: null,
           error: { code, message },

@@ -92,3 +92,15 @@ async def create_assignment(
     await db.commit()
     await db.refresh(assignment)
     return assignment
+
+
+async def delete_assignment(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+) -> bool:
+    assignment = await get_assignment_by_id(db, assignment_id)
+    if assignment is None:
+        return False
+    await db.delete(assignment)
+    await db.commit()
+    return True

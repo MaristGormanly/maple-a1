@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { badgeTone, displayStatus } from '../../utils/status-display.util';
 import { AVATAR_TINTS, StudentInfo, deriveStudent, formatDate } from '../../utils/student-display.util';
 import { EvaluationService } from '../../services/evaluation.service';
-import { SubmissionSummary } from '../../utils/api.types';
+import { ConfirmDialogComponent } from '../../components/confirm-dialog/confirm-dialog.component';
 
 interface Submission {
   id: string;
@@ -18,7 +18,7 @@ interface Submission {
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, ConfirmDialogComponent],
   templateUrl: './dashboard-page.component.html',
 })
 export class DashboardPageComponent {
@@ -27,14 +27,13 @@ export class DashboardPageComponent {
   readonly filter = signal('all');
   readonly avatarTints = AVATAR_TINTS;
 
-  private readonly _loaded = signal<{
-    submissions: Submission[];
-    error: string | null;
-  } | null>(null);
+  private readonly _loadError = signal<string | null>(null);
+  private readonly _loaded = signal(false);
+  private readonly _submissions = signal<Submission[]>([]);
 
-  readonly loading = computed(() => this._loaded() === null);
-  readonly loadError = computed(() => this._loaded()?.error ?? null);
-  readonly allSubmissions = computed(() => this._loaded()?.submissions ?? []);
+  readonly loading = computed(() => !this._loaded());
+  readonly loadError = computed(() => this._loadError());
+  readonly allSubmissions = computed(() => this._submissions());
   readonly filtered = computed(() => {
     const f = this.filter();
     const needle = this.searchQuery().toLowerCase();
@@ -49,23 +48,25 @@ export class DashboardPageComponent {
     });
   });
 
+  readonly showDeleteDialog = signal(false);
+  readonly pendingDeleteId = signal<string | null>(null);
+  readonly deleteLoading = signal(false);
+
   constructor(private router: Router, private evalService: EvaluationService) {
     this.evalService.getSubmissions().subscribe((res) => {
+      this._loaded.set(true);
       if (!res.success || !res.data) {
-        this._loaded.set({ submissions: [], error: res.error?.message ?? 'Failed to load submissions.' });
+        this._loadError.set(res.error?.message ?? 'Failed to load submissions.');
         return;
       }
-      this._loaded.set({
-        submissions: res.data.submissions.map((s): Submission => ({
-          id: s.submission_id,
-          student: deriveStudent(s),
-          github: s.github_repo_url,
-          status: s.status,
-          score: s.deterministic_score,
-          submitted: formatDate(s.created_at),
-        })),
-        error: null,
-      });
+      this._submissions.set(res.data.submissions.map((s): Submission => ({
+        id: s.submission_id,
+        student: deriveStudent(s),
+        github: s.github_repo_url,
+        status: s.status,
+        score: s.deterministic_score,
+        submitted: formatDate(s.created_at),
+      })));
     });
   }
 
@@ -97,5 +98,30 @@ export class DashboardPageComponent {
 
   copyId(id: string): void {
     navigator.clipboard?.writeText(id);
+  }
+
+  openDeleteDialog(id: string, event: Event): void {
+    event.stopPropagation();
+    this.pendingDeleteId.set(id);
+    this.showDeleteDialog.set(true);
+  }
+
+  onDeleteConfirmed(): void {
+    const id = this.pendingDeleteId();
+    if (!id) return;
+    this.deleteLoading.set(true);
+    this.evalService.deleteSubmission(id).subscribe(res => {
+      this.deleteLoading.set(false);
+      if (res.success) {
+        this._submissions.update(list => list.filter(s => s.id !== id));
+        this.showDeleteDialog.set(false);
+        this.pendingDeleteId.set(null);
+      }
+    });
+  }
+
+  onDeleteCancelled(): void {
+    this.showDeleteDialog.set(false);
+    this.pendingDeleteId.set(null);
   }
 }

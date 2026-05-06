@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from ..models.database import get_db
 from ..models.submission import Submission
 from ..middleware.auth import get_current_user, require_role
-from ..services.submissions import list_submissions
+from ..services.submissions import delete_submission, list_submissions
 from ..utils.responses import error_response, success_response
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
@@ -198,6 +198,39 @@ async def get_submission(
     return success_response(
         _serialize_submission(submission, str(current_user.get("role", "")))
     )
+
+
+@router.delete("/{submission_id}", status_code=200)
+async def delete_submission_endpoint(
+    submission_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role("Instructor")),
+):
+    try:
+        sid = uuid.UUID(submission_id)
+    except ValueError:
+        return error_response(400, "VALIDATION_ERROR", "submission_id must be a valid UUID")
+
+    result = await db.execute(
+        select(Submission)
+        .options(selectinload(Submission.assignment))
+        .where(Submission.id == sid)
+    )
+    submission = result.scalar_one_or_none()
+
+    if not submission:
+        return error_response(404, "NOT_FOUND", f"Submission '{submission_id}' not found")
+
+    try:
+        current_user_id = uuid.UUID(str(current_user["sub"]))
+    except (KeyError, ValueError, TypeError):
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+
+    if submission.assignment is not None and submission.assignment.instructor_id != current_user_id:
+        return error_response(403, "FORBIDDEN", "Access denied.")
+
+    await delete_submission(db, sid)
+    return success_response({"deleted": submission_id})
 
 
 @router.post("/{submission_id}/review")

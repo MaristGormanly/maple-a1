@@ -23,4 +23,5 @@ class Assignment(Base):
 
     instructor = relationship("User", back_populates="assignments")
     rubric = relationship("Rubric", back_populates="assignments")
-    submissions = relationship("Submission", back_populates="assignment")
+    submissions = relationship("Submission", back_populates="assignment",
+                              cascade="all, delete-orphan", passive_deletes=True)

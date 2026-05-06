@@ -91,6 +91,33 @@ PASS1_REPAIR_PROMPT: str = (
 )
 
 
+def _clamp_line_ranges(instance: dict) -> dict:
+    """Clamp line_range start/end values to minimum 1 (schema requires 1-based)."""
+
+    def _clamp(lr: dict) -> None:
+        for key in ("start", "end"):
+            if isinstance(lr.get(key), int) and lr[key] < 1:
+                lr[key] = 1
+
+    for finding in instance.get("findings") or []:
+        if isinstance(finding.get("line_range"), dict):
+            _clamp(finding["line_range"])
+        rec = finding.get("recommendation") or {}
+        if isinstance(rec.get("line_range"), dict):
+            _clamp(rec["line_range"])
+
+    for criterion in instance.get("criteria_scores") or []:
+        for rec in criterion.get("recommendations") or []:
+            if isinstance(rec.get("line_range"), dict):
+                _clamp(rec["line_range"])
+
+    top_rec = instance.get("recommendation_object") or {}
+    if isinstance(top_rec.get("line_range"), dict):
+        _clamp(top_rec["line_range"])
+
+    return instance
+
+
 # Async or sync callable shaped like ``llm.complete``.  Tests inject an
 # ``AsyncMock``; production code uses the real ``llm.complete``.
 LLMCompleteCallable = Callable[..., Awaitable[Any]]
@@ -305,7 +332,8 @@ PASS2_REPAIR_PROMPT: str = (
     "Re-emit a valid JSON object matching the Pass 2 schema exactly.\n"
     "Required top-level fields: pass (must equal 'pass2'), findings (array).\n"
     "Each finding requires file_path, line_range (with start and end), rule_reference, "
-    "severity (info|warning|error), and message."
+    "severity (info|warning|error), and message.\n"
+    "All line numbers must be integers ≥ 1 (1-based). Use 1 if the exact line is unknown."
 )
 
 
@@ -570,6 +598,7 @@ async def run_pass2(
         PASS2_OUTPUT_SCHEMA,
         _repair_caller,
         repair_prompt=PASS2_REPAIR_PROMPT,
+        sanitize_fn=_clamp_line_ranges,
     )
 
     # Tag the retrieval status for the orchestrator (schema allows it).
@@ -604,7 +633,8 @@ PASS3_REPAIR_PROMPT: str = (
     "(Exemplary|Proficient|Developing|Beginning|NEEDS_HUMAN_REVIEW), justification, "
     "and confidence (0.0-1.0).\n"
     "Recommendations require file_path, line_range, original_snippet, revised_snippet, "
-    "and a Git-style diff."
+    "and a Git-style diff.\n"
+    "All line numbers must be integers ≥ 1 (1-based). Use 1 if the exact line is unknown."
 )
 
 
@@ -796,6 +826,7 @@ async def run_pass3(
         PASS3_OUTPUT_SCHEMA,
         _repair_caller,
         repair_prompt=PASS3_REPAIR_PROMPT,
+        sanitize_fn=_clamp_line_ranges,
     )
 
     allowed_paths = _collect_evidence_paths(reasoning, code_chunks)

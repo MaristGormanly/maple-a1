@@ -153,3 +153,10 @@ export interface AssignmentDetailResponse {
   error: ApiError | null;
   metadata: ResponseMetadata;
 }
+
+export interface DeleteResponse {
+  success: boolean;
+  data: { deleted: string } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}

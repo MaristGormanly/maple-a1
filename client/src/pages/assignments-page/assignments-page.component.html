@@ -106,6 +106,9 @@
               <button class="btn btn--ghost btn--sm" (click)="viewAssignment(a)">
                 View <svg width="12" height="12"><use href="#icon-chevron" /></svg>
               </button>
+              <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(a.assignment_id, $event)">
+                Delete
+              </button>
             </div>
           </td>
         </tr>
@@ -115,3 +118,19 @@
   </div>
   }
 </div>
+
+@if (deleteError()) {
+<div class="banner banner--error" role="alert" style="margin-top:12px">
+  <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
+  <div class="banner__copy"><div class="banner__body">{{deleteError()}}</div></div>
+</div>
+}
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog()"
+  title="Delete assignment?"
+  message="All submissions and evaluation results for this assignment will be permanently deleted."
+  confirmLabel="Delete assignment"
+  [loading]="deleteLoading()"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="onDeleteCancelled()" />

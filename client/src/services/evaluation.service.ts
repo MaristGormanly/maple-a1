@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
-import { ReviewRequest, SubmissionListResponse, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
+import { DeleteResponse, ReviewRequest, SubmissionListResponse, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
 
 @Injectable({ providedIn: 'root' })
 export class EvaluationService {
@@ -85,6 +85,21 @@ export class EvaluationService {
           });
         })
       );
+  }
+
+  deleteSubmission(id: string): Observable<DeleteResponse> {
+    return this.http.delete<DeleteResponse>(`${this.submissionsUrl}/${id}`).pipe(
+      catchError((err) => {
+        const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        return of<DeleteResponse>({
+          success: false,
+          data: null,
+          error: { code, message },
+          metadata: { timestamp: new Date().toISOString(), module: 'a1', version: 'unknown' },
+        });
+      }),
+    );
   }
 
   submitReview(submissionId: string, request: ReviewRequest): Observable<SubmissionStatusResponse> {

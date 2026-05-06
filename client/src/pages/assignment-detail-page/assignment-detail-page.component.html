@@ -42,11 +42,16 @@
             {{assignment()!.assignment_id}}
           </div>
         </div>
-        @if (assignment()!.enable_lint_review) {
-        <span class="badge badge--green"><span class="badge__dot"></span>Lint review on</span>
-        } @else {
-        <span class="badge badge--neutral">Lint review off</span>
-        }
+        <div style="display:flex;align-items:center;gap:8px">
+          @if (assignment()!.enable_lint_review) {
+          <span class="badge badge--green"><span class="badge__dot"></span>Lint review on</span>
+          } @else {
+          <span class="badge badge--neutral">Lint review off</span>
+          }
+          <button class="btn btn--outline-danger btn--sm" (click)="openAssignmentDeleteDialog()">
+            Delete assignment
+          </button>
+        </div>
       </div>
 
       <div class="stats-row stats-row--3">
@@ -156,6 +161,9 @@
               <button class="btn btn--ghost btn--sm" (click)="viewSubmission(r)">
                 View <svg width="12" height="12"><use href="#icon-chevron" /></svg>
               </button>
+              <button class="btn btn--outline-danger btn--sm" (click)="openSubmissionDeleteDialog(r.id, $event)">
+                Delete
+              </button>
             </div>
           </td>
         </tr>
@@ -175,3 +183,21 @@
 
   }
 </div>
+
+<app-confirm-dialog
+  [visible]="showAssignmentDeleteDialog()"
+  title="Delete assignment?"
+  message="This will permanently delete the assignment and all its submissions and evaluation results."
+  confirmLabel="Delete assignment"
+  [loading]="assignmentDeleteLoading()"
+  (confirmed)="onAssignmentDeleteConfirmed()"
+  (cancelled)="showAssignmentDeleteDialog.set(false)" />
+
+<app-confirm-dialog
+  [visible]="showSubmissionDeleteDialog()"
+  title="Delete submission?"
+  message="The submission and its evaluation result will be permanently removed."
+  confirmLabel="Delete submission"
+  [loading]="submissionDeleteLoading()"
+  (confirmed)="onSubmissionDeleteConfirmed()"
+  (cancelled)="showSubmissionDeleteDialog.set(false)" />

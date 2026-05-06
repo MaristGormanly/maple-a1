@@ -152,6 +152,9 @@
                   <use href="#icon-chevron" />
                 </svg>
               </button>
+              <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(r.id, $event)">
+                Delete
+              </button>
             </div>
           </td>
         </tr>
@@ -201,9 +204,21 @@
             }
           </div>
         </div>
+        <div style="padding-top:8px;display:flex;justify-content:flex-end" (click)="$event.stopPropagation()">
+          <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(r.id, $event)">Delete</button>
+        </div>
       </div>
     </div>
     }
   </div>
   }
 </div>
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog()"
+  title="Delete submission?"
+  message="The submission and its evaluation result will be permanently removed."
+  confirmLabel="Delete submission"
+  [loading]="deleteLoading()"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="onDeleteCancelled()" />

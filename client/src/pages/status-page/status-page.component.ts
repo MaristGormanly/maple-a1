@@ -9,6 +9,7 @@ import {
 } from '../../utils/api.types';
 import { CriteriaScoresComponent } from '../../components/criteria-scores/criteria-scores.component';
 import { DiffViewerComponent } from '../../components/diff-viewer/diff-viewer.component';
+import { ConfirmDialogComponent } from '../../components/confirm-dialog/confirm-dialog.component';
 import { badgeTone, displayStatus } from '../../utils/status-display.util';
 
 const TERMINAL_STATUSES = new Set(['Completed', 'Failed', 'Awaiting Review', 'Rejected', 'EVALUATION_FAILED']);
@@ -25,7 +26,7 @@ interface PipelineStage {
 @Component({
   selector: 'app-status-page',
   standalone: true,
-  imports: [FormsModule, CriteriaScoresComponent, DiffViewerComponent],
+  imports: [FormsModule, CriteriaScoresComponent, DiffViewerComponent, ConfirmDialogComponent],
   templateUrl: './status-page.component.html',
 })
 export class StatusPageComponent implements OnInit, OnDestroy {
@@ -36,6 +37,8 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   pollError: string | null = null;
 
   activeTab: 'scores' | 'diff' = 'scores';
+  showDeleteDialog = false;
+  deleteLoading = false;
   showOverrideInput = false;
   overrideNotes = '';
   reviewSubmitting = false;
@@ -249,5 +252,26 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
   badgeTone(status: string): string {
     return badgeTone(status);
+  }
+
+  onDeleteOpen(): void {
+    this.showDeleteDialog = true;
+  }
+
+  onDeleteCancelled(): void {
+    this.showDeleteDialog = false;
+  }
+
+  onDeleteConfirmed(): void {
+    if (!this.submissionId) return;
+    this.deleteLoading = true;
+    this.evaluationService.deleteSubmission(this.submissionId).subscribe(res => {
+      this.deleteLoading = false;
+      if (res.success) {
+        this.stopPolling();
+        this.router.navigate(['/dashboard']);
+      }
+      this.cdr.detectChanges();
+    });
   }
 }

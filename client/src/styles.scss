@@ -586,3 +586,12 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 
 /* ===== SVG util ===== */
 .icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+
+/* ===== Confirm Dialog ===== */
+.dialog-overlay {
+  position: fixed; inset: 0;
+  background: oklch(0.1 0.02 215 / 0.45);
+  display: grid; place-items: center;
+  z-index: 1000; padding: 16px;
+}
+.dialog-panel { width: 100%; max-width: 420px; border-left: 5px solid var(--red); }
