@@ -76,6 +76,18 @@ export interface EvaluationResult {
   };
 }
 
+export interface RubricLevel {
+  label: string;
+  points: number;
+  description: string;
+}
+
+export interface RubricCriterion {
+  name: string;
+  max_points: number;
+  levels: RubricLevel[];
+}
+
 // Shape returned by GET /api/v1/code-eval/submissions/:id
 export interface SubmissionStatusData {
   submission_id: string;
@@ -86,6 +98,7 @@ export interface SubmissionStatusData {
   status: string;
   created_at: string;
   evaluation?: EvaluationResult;
+  rubric_criteria?: RubricCriterion[] | null;
 }
 
 export interface SubmissionStatusResponse {
@@ -100,10 +113,12 @@ export interface SubmissionSummary {
   assignment_id: string | null;
   student_id: string;
   student_email: string | null;
+  student_name: string | null;
   github_repo_url: string;
   status: string;
   created_at: string;
   deterministic_score: number | null;
+  ai_score: number | null;
 }
 
 export interface SubmissionListResponse {

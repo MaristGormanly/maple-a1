@@ -21,6 +21,11 @@ export class ShellComponent {
     return this.auth.getClaims()?.role ?? 'Instructor';
   }
 
+  get userInitials(): string {
+    const local = this.currentUserEmail.split('@')[0];
+    return local.slice(0, 2).toUpperCase();
+  }
+
   logout(): void {
     this.auth.clear();
     this.router.navigate(['/login']);

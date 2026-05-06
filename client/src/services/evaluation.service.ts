@@ -19,11 +19,13 @@ export class EvaluationService {
     githubUrl: string,
     assignmentId: string,
     rubricFile: File,
+    studentName?: string | null,
   ): Observable<SubmissionResponse> {
     const body = new FormData();
     body.append('github_url', githubUrl);
     body.append('assignment_id', assignmentId);
     body.append('rubric', rubricFile);
+    if (studentName) body.append('student_name', studentName);
 
     // Do not set Content-Type manually — the browser sets multipart/form-data
     // with the correct boundary automatically when the body is FormData.

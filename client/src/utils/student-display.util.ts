@@ -25,17 +25,18 @@ export function tintIndex(studentId: string): number {
 }
 
 export function deriveStudent(summary: SubmissionSummary): StudentInfo {
+  const displayName = summary.student_name?.trim() || 'Name not provided';
   const email = summary.student_email ?? summary.student_id;
   const prefix = email.split('@')[0];
-  const name = prefix
+  const derived = prefix
     .replace(/[._-]/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
-  const parts = name.trim().split(' ').filter(Boolean);
+  const parts = displayName.trim().split(' ').filter(Boolean);
   const initials =
     parts.length >= 2
       ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-      : name.slice(0, 2).toUpperCase();
-  return { name, email: summary.student_email ?? '', initials, tint: tintIndex(summary.student_id) };
+      : displayName.slice(0, 2).toUpperCase();
+  return { name: displayName, email: summary.student_email ?? '', initials, tint: tintIndex(summary.student_id) };
 }
 
 export function formatDate(iso: string): string {

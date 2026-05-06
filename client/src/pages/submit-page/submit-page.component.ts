@@ -69,7 +69,7 @@ export class SubmitPageComponent {
     this.form.disable({ emitEvent: false });
 
     this.evaluationService
-      .submitEvaluation(githubUrl!, assignmentId!, this.selectedFile)
+      .submitEvaluation(githubUrl!, assignmentId!, this.selectedFile, studentId || null)
       .pipe(
         finalize(() => {
           this.submitting = false;

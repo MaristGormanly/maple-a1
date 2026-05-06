@@ -252,7 +252,7 @@
   </div>
 
   @if (activeTab === 'scores') {
-  <app-criteria-scores [criteriaScores]="criteriaScores" />
+  <app-criteria-scores [criteriaScores]="criteriaScores" [rubricCriteria]="rubricCriteria" />
   }
   @if (activeTab === 'diff') {
   <app-diff-viewer [recommendations]="recommendations" />

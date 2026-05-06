@@ -19,6 +19,7 @@ class Submission(Base):
     )
     github_repo_url: Mapped[str] = mapped_column(String, nullable=False)
     commit_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    student_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(String, default="Pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

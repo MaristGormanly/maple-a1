@@ -64,7 +64,7 @@ export class DashboardPageComponent {
         student: deriveStudent(s),
         github: s.github_repo_url,
         status: s.status,
-        score: s.deterministic_score,
+        score: s.ai_score ?? s.deterministic_score,
         submitted: formatDate(s.created_at),
       })));
     });

@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { EvaluationService } from '../../services/evaluation.service';
 import {
   CriterionScore, LanguageInfo, RecommendationObject, ReviewRequest,
-  SubmissionData, SubmissionStatusData, TestCase, TestSummary,
+  RubricCriterion, SubmissionData, SubmissionStatusData, TestCase, TestSummary,
 } from '../../utils/api.types';
 import { CriteriaScoresComponent } from '../../components/criteria-scores/criteria-scores.component';
 import { DiffViewerComponent } from '../../components/diff-viewer/diff-viewer.component';
@@ -156,6 +156,10 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
   get criteriaScores(): CriterionScore[] {
     return this.statusData?.evaluation?.ai_feedback?.criteria_scores ?? [];
+  }
+
+  get rubricCriteria(): RubricCriterion[] {
+    return this.statusData?.rubric_criteria ?? [];
   }
 
   get recommendations(): RecommendationObject[] {

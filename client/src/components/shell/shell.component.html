@@ -27,10 +27,10 @@
     <div class="sidebar__spacer"></div>
 
     <div class="user-card">
-      <div class="user-card__avatar">EM</div>
+      <div class="user-card__avatar">{{userInitials}}</div>
       <div class="user-card__meta">
-        <div class="user-card__name">Dr. Elena Marsh</div>
-        <div class="user-card__role">Instructor</div>
+        <div class="user-card__name">{{currentUserEmail}}</div>
+        <div class="user-card__role">{{currentUserRole}}</div>
       </div>
       <button class="iconbtn" title="Sign out" (click)="logout()">
         <svg width="14" height="14"><use href="#icon-logout"/></svg>

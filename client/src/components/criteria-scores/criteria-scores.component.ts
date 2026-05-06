@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { CriterionScore } from '../../utils/api.types';
+import { CriterionScore, RubricCriterion } from '../../utils/api.types';
 
 @Component({
   selector: 'app-criteria-scores',
@@ -10,6 +10,14 @@ import { CriterionScore } from '../../utils/api.types';
 export class CriteriaScoresComponent {
   // Criteria arrive in rubric order from the API (Pass 3 preserves rubric criterion sequence).
   @Input() criteriaScores: CriterionScore[] = [];
+  @Input() rubricCriteria: RubricCriterion[] = [];
+
+  guidelineFor(c: CriterionScore): string | null {
+    const criterion = this.rubricCriteria.find(r => r.name === c.criterion_name);
+    if (!criterion) return null;
+    const level = criterion.levels.find(l => l.label === c.level);
+    return level?.description ?? null;
+  }
 
   badgeTone(level: string): string {
     const map: Record<string, string> = {

@@ -430,6 +430,7 @@ async def evaluate_submission(
     request: Request,
     github_url: str = Form(...),
     assignment_id: str | None = Form(default=None),
+    student_name: str | None = Form(default=None),
     rubric: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -550,6 +551,7 @@ async def evaluate_submission(
             github_repo_url=str(validated_url),
             commit_hash=cached_entry.commit_hash,
             status="Pending" if parsed_assignment_id is not None else "cached",
+            student_name=student_name or None,
         )
         # region agent log
         _dlog(
@@ -645,6 +647,7 @@ async def evaluate_submission(
         github_repo_url=str(validated_url),
         commit_hash=commit_hash,
         status="Pending" if parsed_assignment_id is not None else "cloned",
+        student_name=student_name or None,
     )
     # region agent log
     _dlog(

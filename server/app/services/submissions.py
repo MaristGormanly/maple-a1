@@ -24,6 +24,7 @@ async def create_submission(
     github_repo_url: str,
     commit_hash: str | None = None,
     status: str = "Pending",
+    student_name: str | None = None,
 ) -> Submission:
     """Persist a new Submission row and return the refreshed ORM instance.
 
@@ -38,6 +39,7 @@ async def create_submission(
         github_repo_url=github_repo_url,
         commit_hash=commit_hash,
         status=status,
+        student_name=student_name or None,
     )
     db.add(submission)
     await db.commit()

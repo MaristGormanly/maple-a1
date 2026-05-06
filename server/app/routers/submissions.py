@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..models.assignment import Assignment
 from ..models.database import get_db
 from ..models.submission import Submission
 from ..middleware.auth import get_current_user, require_role
@@ -76,6 +77,11 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
     role = viewer_role.strip().lower() if viewer_role else ""
     viewer_is_privileged = role in ("instructor", "admin")
 
+    rubric_criteria = None
+    if submission.assignment and submission.assignment.rubric:
+        schema = submission.assignment.rubric.schema_json
+        rubric_criteria = schema if isinstance(schema, list) else None
+
     data: dict = {
         "submission_id": str(submission.id),
         "assignment_id": str(submission.assignment_id) if submission.assignment_id else None,
@@ -84,6 +90,7 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
         "commit_hash": submission.commit_hash,
         "status": submission.status,
         "created_at": submission.created_at.isoformat() if submission.created_at else None,
+        "rubric_criteria": rubric_criteria,
     }
 
     if submission.evaluation_result:
@@ -130,17 +137,24 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
 
 def _serialize_submission_summary(submission: Submission) -> dict:
     score = None
+    ai_score = None
     if submission.evaluation_result:
         score = submission.evaluation_result.deterministic_score
+        feedback = submission.evaluation_result.ai_feedback_json or {}
+        criteria = feedback.get("criteria_scores") or []
+        if criteria:
+            ai_score = round(sum(c.get("score", 0) for c in criteria) / len(criteria))
     return {
         "submission_id": str(submission.id),
         "assignment_id": str(submission.assignment_id) if submission.assignment_id else None,
         "student_id": str(submission.student_id),
         "student_email": submission.student.email if submission.student else None,
+        "student_name": submission.student_name,
         "github_repo_url": submission.github_repo_url,
         "status": submission.status,
         "created_at": submission.created_at.isoformat() if submission.created_at else None,
         "deterministic_score": score,
+        "ai_score": ai_score,
     }
 
 
@@ -175,7 +189,7 @@ async def get_submission(
 
     result = await db.execute(
         select(Submission)
-        .options(selectinload(Submission.assignment))
+        .options(selectinload(Submission.assignment).selectinload(Assignment.rubric))
         .options(selectinload(Submission.evaluation_result))
         .where(Submission.id == sid)
     )
@@ -247,7 +261,7 @@ async def review_submission(
 
     result = await db.execute(
         select(Submission)
-        .options(selectinload(Submission.assignment))
+        .options(selectinload(Submission.assignment).selectinload(Assignment.rubric))
         .options(selectinload(Submission.evaluation_result))
         .where(Submission.id == sid)
     )
