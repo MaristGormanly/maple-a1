@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { AssignmentService } from '../../services/assignment.service';
@@ -18,24 +18,24 @@ export class AssignmentPageComponent {
   rubricId = '';
   enableLintReview = true;
 
-  saving = false;
-  saved = false;
-  errorMessage: string | null = null;
-  createdAssignmentId: string | null = null;
+  readonly saving = signal(false);
+  readonly saved = signal(false);
+  readonly errorMessage = signal<string | null>(null);
+  readonly createdAssignmentId = signal<string | null>(null);
 
   create(): void {
-    if (this.saving) return;
+    if (this.saving()) return;
     if (!this.title.trim() || !this.testSuiteRepoUrl.trim()) {
-      this.errorMessage = 'Title and test suite repository are required.';
+      this.errorMessage.set('Title and test suite repository are required.');
       return;
     }
     if (this.rubricId && !this.isValidUuid(this.rubricId)) {
-      this.errorMessage = 'Rubric ID must be a valid UUID (or left blank).';
+      this.errorMessage.set('Rubric ID must be a valid UUID (or left blank).');
       return;
     }
 
-    this.saving = true;
-    this.errorMessage = null;
+    this.saving.set(true);
+    this.errorMessage.set(null);
 
     this.assignments
       .create({
@@ -46,20 +46,22 @@ export class AssignmentPageComponent {
         language_override: this.languageOverride.trim() || null,
       })
       .subscribe((response) => {
-        this.saving = false;
+        this.saving.set(false);
         if (response.success && response.data) {
-          this.saved = true;
-          this.createdAssignmentId = response.data.assignment_id;
+          this.saved.set(true);
+          this.createdAssignmentId.set(response.data.assignment_id);
         } else {
-          this.errorMessage =
-            response.error?.message ?? 'Could not create the assignment.';
+          this.errorMessage.set(
+            response.error?.message ?? 'Could not create the assignment.',
+          );
         }
       });
   }
 
   copyId(): void {
-    if (this.createdAssignmentId) {
-      navigator.clipboard?.writeText(this.createdAssignmentId);
+    const id = this.createdAssignmentId();
+    if (id) {
+      navigator.clipboard?.writeText(id);
     }
   }
 
