@@ -21,6 +21,7 @@ interface PipelineStage {
   hint: string;
   done: boolean;
   active: boolean;
+  failed: boolean;
 }
 
 @Component({
@@ -199,34 +200,52 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     );
   }
 
+  get failedStageKey(): string | null {
+    if (this.status === 'EVALUATION_FAILED') return 'llm';
+    if (this.status !== 'Failed') return null;
+    if (!this.statusData?.commit_hash) return 'clone';
+    if (!this.statusData?.evaluation) return 'sandbox';
+    return 'sandbox';
+  }
+
+  get isInactivePipeline(): boolean {
+    return this.status === 'Failed' || this.status === 'EVALUATION_FAILED';
+  }
+
   get pipelineStages(): PipelineStage[] {
     const s = this.status;
+    const failed = this.failedStageKey;
     const doneSet = (statuses: string[]) => statuses.includes(s);
     return [
       {
         key: 'clone', label: 'Clone & preprocess', hint: 'Stripped .git, node_modules, binaries',
         done: doneSet(['Cloned', 'Cached', 'Testing', 'Evaluating', 'Awaiting Review', 'Completed']),
         active: s === 'Pending',
+        failed: failed === 'clone',
       },
       {
         key: 'cache', label: 'Cache lookup', hint: 'Checking commit::rubric digest',
         done: doneSet(['Cached', 'Testing', 'Evaluating', 'Awaiting Review', 'Completed']),
         active: s === 'Cloned',
+        failed: failed === 'cache',
       },
       {
         key: 'sandbox', label: 'Sandbox test run', hint: 'Running test suite in Docker sandbox',
         done: doneSet(['Evaluating', 'Awaiting Review', 'Completed']),
         active: s === 'Testing',
+        failed: failed === 'sandbox',
       },
       {
         key: 'llm', label: 'AI evaluation', hint: 'Reconciling tests against rubric, drafting feedback',
         done: doneSet(['Awaiting Review', 'Completed']),
         active: s === 'Evaluating',
+        failed: failed === 'llm',
       },
       {
         key: 'review', label: 'Awaiting your review', hint: 'Feedback held until you approve',
         done: s === 'Completed',
         active: s === 'Awaiting Review',
+        failed: false,
       },
     ];
   }

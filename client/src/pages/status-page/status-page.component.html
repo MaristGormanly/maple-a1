@@ -142,31 +142,65 @@
   </div>
   }
 
-  <!-- Processing indicator -->
-  @if (isPolling() && statusData && !isError) {
-  <div class="card" style="margin-bottom:28px">
-    <div class="card__body" style="display:flex;align-items:center;gap:12px;padding:16px 18px">
+  <!-- Pipeline stage stepper: shown while processing, on failure, and on completion -->
+  @if (statusData && (isPolling() || isInactivePipeline || isCompleted)) {
+  <div class="card card--quiet" style="margin-bottom:28px">
+    @if (isPolling() && !isError) {
+    <div class="card__body" style="display:flex;align-items:center;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--border)">
       <span class="spinner" style="color:var(--accent)"></span>
-      <div>
-        <div style="font-weight:600;font-size:14px">Processing submission…</div>
-        <div class="muted" style="font-size:12px;margin-top:2px">This page refreshes every 3 seconds. Tab is safe to
-          close.</div>
+      <div style="font-weight:600;font-size:13px">Processing submission…</div>
+      <span class="muted" style="font-size:12px;margin-left:4px">Updates every 3 s</span>
+    </div>
+    }
+    @if (isError) {
+    <div class="card__body" style="display:flex;align-items:center;gap:10px;padding:14px 18px 10px;border-bottom:1px solid var(--border)">
+      <svg width="15" height="15" style="color:var(--red);flex-shrink:0"><use href="#icon-warn" /></svg>
+      <div style="font-weight:600;font-size:13px;color:var(--red)">Pipeline stopped — see failed step below</div>
+    </div>
+    }
+    <div class="card__body pipeline-steps" style="padding:14px 18px 16px">
+      @for (stage of pipelineStages; track stage.key) {
+      <div class="pipeline-steps__row">
+        <span class="pipeline-steps__icon"
+          [class.pipeline-steps__icon--done]="stage.done"
+          [class.pipeline-steps__icon--active]="stage.active"
+          [class.pipeline-steps__icon--failed]="stage.failed">
+          @if (stage.done) {
+            <svg width="11" height="11" viewBox="0 0 12 12"><polyline points="1.5,6 5,9.5 10.5,2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          } @else if (stage.active) {
+            <span class="spinner" style="width:9px;height:9px;border-width:1.5px"></span>
+          } @else if (stage.failed) {
+            <svg width="10" height="10" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          } @else {
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--border-strong);display:block"></span>
+          }
+        </span>
+        <div>
+          <div class="pipeline-steps__label"
+            [style.color]="stage.failed ? 'var(--red)' : stage.active ? 'var(--ink)' : stage.done ? 'var(--ink-2)' : 'var(--ink-3)'">
+            {{stage.label}}
+          </div>
+          @if (stage.done || stage.active || stage.failed) {
+          <div class="pipeline-steps__hint">{{stage.hint}}</div>
+          }
+        </div>
       </div>
+      }
     </div>
   </div>
   }
 
   <!-- Error banner -->
   @if (isError) {
-  <div class="banner banner--error" role="alert">
+  <div class="banner banner--error" role="alert" style="margin-bottom:20px">
     <span class="banner__icon"><svg width="16" height="16">
         <use href="#icon-warn" />
       </svg></span>
     <div class="banner__copy">
       <div class="banner__title">System error — pipeline could not finish</div>
       <div class="banner__body">
-        Something went wrong on our end (clone, sandbox, or AI step). This is not about the student's work.
-        The submission has been flagged for review; contact your administrator with the submission ID.
+        Something went wrong on our end. This is not about the student's work.
+        Contact your administrator with the submission ID.
       </div>
     </div>
   </div>
