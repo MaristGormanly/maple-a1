@@ -28,7 +28,7 @@ class ContainerResult:
 
     stdout: str
     stderr: str
-    exit_code: int
+    exit_code: int | None
 
 
 def _build_shell_command(profile) -> list[str]:

@@ -91,29 +91,65 @@ PASS1_REPAIR_PROMPT: str = (
 )
 
 
-def _clamp_line_ranges(instance: dict) -> dict:
-    """Clamp line_range start/end values to minimum 1 (schema requires 1-based)."""
+_RECOMMENDATION_ALLOWED_KEYS = frozenset(
+    {"file_path", "line_range", "original_snippet", "revised_snippet", "diff", "rationale"}
+)
+_FINDING_ALLOWED_KEYS = frozenset(
+    {"file_path", "line_range", "rule_reference", "severity", "message",
+     "style_guide_excerpt", "style_guide_source", "recommendation"}
+)
 
-    def _clamp(lr: dict) -> None:
-        for key in ("start", "end"):
-            if isinstance(lr.get(key), int) and lr[key] < 1:
-                lr[key] = 1
+
+def _clamp_line_ranges(instance: dict) -> dict:
+    """Normalise and clamp line_range values across the response envelope.
+
+    Handles two common model formatting errors before schema validation:
+    1. line_range returned as [start, end] array → converted to {"start": ..., "end": ...}
+    2. Extra properties on RecommendationObjects (e.g. "message") → stripped
+    """
+
+    def _normalize(container: dict, key: str = "line_range") -> None:
+        lr = container.get(key)
+        if isinstance(lr, list) and len(lr) == 2:
+            container[key] = {"start": max(1, int(lr[0])), "end": max(1, int(lr[1]))}
+            lr = container[key]
+        if isinstance(lr, dict):
+            for k in ("start", "end"):
+                if isinstance(lr.get(k), int) and lr[k] < 1:
+                    lr[k] = 1
+
+    def _strip_rec(rec: dict) -> None:
+        for k in list(rec.keys()):
+            if k not in _RECOMMENDATION_ALLOWED_KEYS:
+                del rec[k]
+        _normalize(rec)
 
     for finding in instance.get("findings") or []:
-        if isinstance(finding.get("line_range"), dict):
-            _clamp(finding["line_range"])
+        for k in list(finding.keys()):
+            if k not in _FINDING_ALLOWED_KEYS:
+                del finding[k]
+        _normalize(finding)
         rec = finding.get("recommendation") or {}
-        if isinstance(rec.get("line_range"), dict):
-            _clamp(rec["line_range"])
+        if rec:
+            _normalize(rec)
 
     for criterion in instance.get("criteria_scores") or []:
         for rec in criterion.get("recommendations") or []:
-            if isinstance(rec.get("line_range"), dict):
-                _clamp(rec["line_range"])
+            _strip_rec(rec)
 
     top_rec = instance.get("recommendation_object") or {}
-    if isinstance(top_rec.get("line_range"), dict):
-        _clamp(top_rec["line_range"])
+    if top_rec:
+        _normalize(top_rec)
+
+    # Strip unknown top-level keys from Pass 3 envelopes (models sometimes
+    # add e.g. "recommendations" at the envelope level).
+    if "criteria_scores" in instance:
+        _PASS3_ALLOWED_TOP = frozenset(
+            {"criteria_scores", "deterministic_score", "metadata", "flags", "summary"}
+        )
+        for k in list(instance.keys()):
+            if k not in _PASS3_ALLOWED_TOP:
+                del instance[k]
 
     return instance
 
@@ -174,15 +210,15 @@ async def _invoke_complete(
     timeout: int,
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> str:
     """Call the LLM completion function and extract its text content.
 
     Adapts to either the real ``llm.complete`` (returns
     ``LLMResponse``) or a test-injected mock that returns a raw string.
 
-    The ``timeout`` kwarg is forwarded only if the target callable
-    accepts it — keeps us forward-compatible with Jayden's M3 wrapper
-    without breaking the current stub signature.
+    The ``timeout`` and ``response_schema`` kwargs are forwarded only if
+    the target callable accepts them.
     """
     kwargs: dict[str, Any] = {
         "system_prompt": system_prompt,
@@ -207,8 +243,12 @@ async def _invoke_complete(
                 "skipping it (Jayden's M3 wrapper will add it). intended=%ss",
                 timeout,
             )
+        if response_schema is not None and ("response_schema" in sig.parameters or has_var_kw):
+            kwargs["response_schema"] = response_schema
     except (TypeError, ValueError):
         kwargs["timeout"] = timeout
+        if response_schema is not None:
+            kwargs["response_schema"] = response_schema
 
     response = llm_complete(**kwargs)
     if inspect.isawaitable(response):
@@ -287,6 +327,7 @@ async def run_pass1(
         timeout=PASS1_TIMEOUT_SECONDS,
         max_tokens=PASS1_MAX_TOKENS,
         temperature=PASS1_TEMPERATURE,
+        response_schema=PASS1_OUTPUT_SCHEMA,
     )
 
     async def _repair_caller(prompt: str) -> str:
@@ -298,6 +339,7 @@ async def run_pass1(
             timeout=PASS1_TIMEOUT_SECONDS,
             max_tokens=PASS1_MAX_TOKENS,
             temperature=PASS1_TEMPERATURE,
+            response_schema=PASS1_OUTPUT_SCHEMA,
         )
 
     return await validate_and_repair(
@@ -580,6 +622,7 @@ async def run_pass2(
         timeout=PASS2_TIMEOUT_SECONDS,
         max_tokens=PASS2_MAX_TOKENS,
         temperature=PASS2_TEMPERATURE,
+        response_schema=PASS2_OUTPUT_SCHEMA,
     )
 
     async def _repair_caller(prompt: str) -> str:
@@ -591,6 +634,7 @@ async def run_pass2(
             timeout=PASS2_TIMEOUT_SECONDS,
             max_tokens=PASS2_MAX_TOKENS,
             temperature=PASS2_TEMPERATURE,
+            response_schema=PASS2_OUTPUT_SCHEMA,
         )
 
     pass2_validated = await validate_and_repair(
@@ -611,7 +655,7 @@ async def run_pass2(
 # Pass 3 — Synthesis (MAPLE Standard Response Envelope)
 # ---------------------------------------------------------------------------
 
-PASS3_MODEL: str = "gemini-3.1-pro-preview"
+PASS3_MODEL: str = "gemini-3.1-flash-lite-preview"
 PASS3_TIMEOUT_SECONDS: int = 60  # "complex" call per M3 tasks #2
 PASS3_MAX_TOKENS: int = 4096
 PASS3_TEMPERATURE: float = 0.2
@@ -644,6 +688,7 @@ def _build_pass3_user_message(
     rubric_content: str,
     deterministic_score: float | None,
     metadata: dict | None,
+    code_chunks: Sequence[CodeChunk] | None = None,
 ) -> str:
     payload: dict[str, Any] = {
         "rubric": rubric_content,
@@ -652,11 +697,25 @@ def _build_pass3_user_message(
         "pass2_reasoning": reasoning.get("pass2"),
         "metadata": metadata or {},
     }
+    if code_chunks:
+        payload["code_chunks"] = [
+            {
+                "file_path": c.file_path,
+                "language": c.language,
+                "kind": c.kind,
+                "name": c.name,
+                "line_range": {"start": c.start_line, "end": c.end_line},
+                "text": c.text,
+            }
+            for c in code_chunks
+        ]
     body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     redacted = llm.redact(body)
 
     return (
-        "Evidence (rubric + Pass 1/Pass 2 reasoning + execution metadata):\n"
+        "Evidence (rubric + Pass 1/Pass 2 reasoning + execution metadata"
+        + (" + AST-extracted code chunks" if code_chunks else "")
+        + "):\n"
         f"{redacted}\n\n"
         "Task: synthesize into the MAPLE Standard Response Envelope. "
         "For every rubric criterion scoring below 'Exemplary', emit a "
@@ -789,6 +848,7 @@ async def run_pass3(
         rubric_content=rubric_content,
         deterministic_score=deterministic_score,
         metadata=metadata,
+        code_chunks=code_chunks,
     )
     messages: list[dict] = [{"role": "user", "content": user_message}]
 
@@ -808,6 +868,7 @@ async def run_pass3(
         timeout=PASS3_TIMEOUT_SECONDS,
         max_tokens=PASS3_MAX_TOKENS,
         temperature=PASS3_TEMPERATURE,
+        response_schema=PASS3_OUTPUT_SCHEMA,
     )
 
     async def _repair_caller(prompt: str) -> str:
@@ -819,6 +880,7 @@ async def run_pass3(
             timeout=PASS3_TIMEOUT_SECONDS,
             max_tokens=PASS3_MAX_TOKENS,
             temperature=PASS3_TEMPERATURE,
+            response_schema=PASS3_OUTPUT_SCHEMA,
         )
 
     envelope = await validate_and_repair(

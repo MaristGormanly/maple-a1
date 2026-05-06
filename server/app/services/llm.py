@@ -126,12 +126,51 @@ from .llm_validator import EvaluationFailedError
 _GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
+def _to_gemini_schema(schema: dict) -> dict:
+    """Recursively convert a JSON Schema dict to Gemini-compatible OpenAPI subset.
+
+    Strips $schema/$id/title and converts ``const: X`` → ``enum: [X]``
+    since Gemini's responseSchema follows OpenAPI 3.0, not JSON Schema.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    result: dict[str, Any] = {}
+    for k, v in schema.items():
+        if k in ("$schema", "$id", "title", "additionalProperties", "minItems",
+                 "minLength", "minimum", "maximum"):
+            continue
+        if k == "const":
+            result["type"] = "string"
+            result["enum"] = [v]
+            continue
+        # Gemini requires type to be a single string; convert ["X", "null"] →
+        # type "X" + nullable:true
+        if k == "type" and isinstance(v, list):
+            non_null = [t for t in v if t != "null"]
+            if "null" in v:
+                result["nullable"] = True
+            if non_null:
+                result[k] = non_null[0]
+            continue
+        if isinstance(v, dict):
+            result[k] = _to_gemini_schema(v)
+        elif isinstance(v, list):
+            result[k] = [
+                _to_gemini_schema(item) if isinstance(item, dict) else item
+                for item in v
+            ]
+        else:
+            result[k] = v
+    return result
+
+
 def _call_gemini(
     spec: ModelSpec,
     system: str,
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     import httpx
     if not settings.GEMINI_API_KEY:
@@ -142,12 +181,17 @@ def _call_gemini(
         role = "model" if m.get("role") == "assistant" else "user"
         contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
 
+    gen_config: dict[str, Any] = {
+        "maxOutputTokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_schema is not None:
+        gen_config["responseMimeType"] = "application/json"
+        gen_config["responseSchema"] = _to_gemini_schema(response_schema)
+
     body: dict[str, Any] = {
         "contents": contents,
-        "generationConfig": {
-            "maxOutputTokens": max_tokens,
-            "temperature": temperature,
-        },
+        "generationConfig": gen_config,
     }
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
@@ -161,7 +205,7 @@ def _call_gemini(
                 "Content-Type": "application/json",
             },
             json=body,
-            timeout=30,
+            timeout=90,
         )
     except httpx.RequestError as exc:
         raise ProviderError(f"gemini request failed: {exc}") from exc
@@ -193,17 +237,21 @@ def _call_openai(
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     from openai import OpenAI
     if not settings.OPENAI_API_KEY:
         raise ProviderError("OPENAI_API_KEY not configured")
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    resp = client.chat.completions.create(
-        model=spec.name,
-        messages=[{"role": "system", "content": system}, *messages],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
+    create_kwargs: dict[str, Any] = {
+        "model": spec.name,
+        "messages": [{"role": "system", "content": system}, *messages],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_schema is not None:
+        create_kwargs["response_format"] = {"type": "json_object"}
+    resp = client.chat.completions.create(**create_kwargs)
     content = resp.choices[0].message.content or ""
     input_tokens = resp.usage.prompt_tokens if resp.usage else 0
     output_tokens = resp.usage.completion_tokens if resp.usage else 0
@@ -221,11 +269,12 @@ def _dispatch(
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     if spec.provider == "gemini":
-        return _call_gemini(spec, system, messages, max_tokens, temperature)
+        return _call_gemini(spec, system, messages, max_tokens, temperature, response_schema)
     if spec.provider == "openai":
-        return _call_openai(spec, system, messages, max_tokens, temperature)
+        return _call_openai(spec, system, messages, max_tokens, temperature, response_schema)
     raise ProviderError(f"Unknown provider: {spec.provider}")
 
 
@@ -263,6 +312,7 @@ async def complete(
     temperature: float = 0.7,
     model: str | None = None,
     timeout: int | None = None,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     """Send a completion request to the configured LLM provider.
 
@@ -303,6 +353,7 @@ async def complete(
                     asyncio.to_thread(
                         _dispatch,
                         spec, safe_system, safe_messages, max_tokens, temperature,
+                        response_schema,
                     ),
                     timeout=timeout,
                 )

@@ -10,7 +10,7 @@ import re
 _MAX_RAW_LEN = 50_000
 
 
-def parse_test_results(stdout: str, stderr: str, exit_code: int) -> dict:
+def parse_test_results(stdout: str, stderr: str, exit_code: int | None) -> dict:
     """Return a structured dict describing the test run.
 
     Detection order:
@@ -69,7 +69,7 @@ def parse_test_results(stdout: str, stderr: str, exit_code: int) -> dict:
     )
 
 
-def _resource_constraint_metadata(exit_code: int) -> dict | None:
+def _resource_constraint_metadata(exit_code: int | None) -> dict | None:
     if exit_code == 137:
         return {"exit_code": 137, "oom_killed": True, "timed_out": False}
     if exit_code == 124:

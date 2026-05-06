@@ -71,9 +71,13 @@ def _detect_python(root: Path) -> dict | None:
 
         return {"language": "python", "version": None, "source": "pyproject.toml"}
 
-    for marker in ("setup.cfg", "setup.py", "requirements.txt"):
+    for marker in ("setup.cfg", "setup.py", "requirements.txt", "conftest.py", "pytest.ini", "tox.ini", ".python-version"):
         if (root / marker).is_file():
             return {"language": "python", "version": None, "source": marker}
+
+    # Fallback: any .py file in the repo root or one level deep
+    if any(root.glob("*.py")) or any(root.glob("*/*.py")):
+        return {"language": "python", "version": None, "source": "*.py"}
 
     return None
 
@@ -100,27 +104,36 @@ def _detect_node(root: Path) -> dict | None:
 
 def _detect_java(root: Path) -> dict | None:
     pom = root / "pom.xml"
-    if not pom.is_file():
-        return None
-    try:
-        tree = ET.parse(pom)  # noqa: S314
-        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-        props = tree.find(".//m:properties", ns)
-        if props is None:
-            props = tree.find(".//properties")
-        if props is not None:
-            jv = props.find("m:java.version", ns)
-            if jv is None:
-                jv = props.find("java.version")
-            if jv is not None and jv.text:
-                return {
-                    "language": "java",
-                    "version": jv.text.strip(),
-                    "source": "pom.xml",
-                }
-        return {"language": "java", "version": None, "source": "pom.xml"}
-    except Exception:
-        return {"language": "java", "version": None, "source": "pom.xml"}
+    if pom.is_file():
+        try:
+            tree = ET.parse(pom)  # noqa: S314
+            ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+            props = tree.find(".//m:properties", ns)
+            if props is None:
+                props = tree.find(".//properties")
+            if props is not None:
+                jv = props.find("m:java.version", ns)
+                if jv is None:
+                    jv = props.find("java.version")
+                if jv is not None and jv.text:
+                    return {
+                        "language": "java",
+                        "version": jv.text.strip(),
+                        "source": "pom.xml",
+                    }
+            return {"language": "java", "version": None, "source": "pom.xml"}
+        except Exception:
+            return {"language": "java", "version": None, "source": "pom.xml"}
+
+    for marker in ("build.gradle", "build.gradle.kts", "gradlew",
+                   "settings.gradle", "settings.gradle.kts"):
+        if (root / marker).is_file():
+            return {"language": "java", "version": None, "source": marker}
+
+    if next(root.glob("**/*.java"), None) is not None:
+        return {"language": "java", "version": None, "source": "*.java"}
+
+    return None
 
 
 _CMAKE_STD = re.compile(r"set\s*\(\s*CMAKE_CXX_STANDARD\s+(\d+)", re.IGNORECASE)

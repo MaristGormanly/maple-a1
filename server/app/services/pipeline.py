@@ -238,12 +238,23 @@ async def run_pipeline(
             },
             run_id=str(submission_id)[:8],
         )
-        container = await run_container(
-            language,
-            student_repo_path,
-            str(test_suite_dir.resolve()),
-            timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
-        )
+        _container_run_error: str | None = None
+        try:
+            container = await run_container(
+                language,
+                student_repo_path,
+                str(test_suite_dir.resolve()),
+                timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+            )
+        except Exception as _exc:
+            _container_run_error = str(_exc)
+            logger.warning(
+                "run_pipeline: container run failed; continuing with null test results — %s",
+                _container_run_error,
+            )
+            from .docker_client import ContainerResult as _ContainerResult
+            container = _ContainerResult(stdout="", stderr="", exit_code=None)
+
         _dlog(
             location="pipeline.py:run_pipeline:container_done",
             hypothesis_id="A,B",
@@ -393,6 +404,14 @@ async def run_pipeline(
 # Milestone 3 — Evaluating phase
 # ---------------------------------------------------------------------------
 
+def _normalize_criteria_scores(envelope: dict) -> None:
+    """Convert LLM 1-5 ordinal scores to 0-100: 50 + (score - 1) * 12.5."""
+    for criterion in envelope.get("criteria_scores") or []:
+        raw = criterion.get("score")
+        if isinstance(raw, (int, float)) and 1 <= raw <= 5:
+            criterion["score"] = round(50 + (raw - 1) * 12.5, 2)
+
+
 async def _run_evaluating_phase(
     *,
     submission_id: uuid.UUID,
@@ -522,6 +541,7 @@ async def _run_evaluating_phase(
             metadata=metadata_json,
             code_chunks=code_chunks,
         )
+        _normalize_criteria_scores(envelope)
         # region agent log
         _dlog(
             location="pipeline.py:_run_evaluating_phase:pass3_done",

@@ -70,7 +70,7 @@ class TestCompleteRetriesThenSucceeds(unittest.IsolatedAsyncioTestCase):
 
         call_count = 0
 
-        def dispatch_side_effect(spec, system, messages, max_tokens, temperature):
+        def dispatch_side_effect(spec, system, messages, max_tokens, temperature, response_schema=None):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -100,7 +100,7 @@ class TestCompleteAllRetriesSameModelFallsThrough(unittest.IsolatedAsyncioTestCa
 
         first_model_name = "gemini-3.1-pro-preview"
 
-        def dispatch_side_effect(spec, system, messages, max_tokens, temperature):
+        def dispatch_side_effect(spec, system, messages, max_tokens, temperature, response_schema=None):
             if spec.name == first_model_name:
                 raise ProviderError("first model always fails")
             return _FAKE_RESPONSE
@@ -167,7 +167,7 @@ class TestCompleteRedactsSystemPrompt(unittest.IsolatedAsyncioTestCase):
         fake_pat = "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         captured_system = []
 
-        def dispatch_capture(spec, system, messages, max_tokens, temperature):
+        def dispatch_capture(spec, system, messages, max_tokens, temperature, response_schema=None):
             captured_system.append(system)
             return _FAKE_RESPONSE
 
@@ -196,7 +196,7 @@ class TestCompleteRedactsMessages(unittest.IsolatedAsyncioTestCase):
         email_addr = "student@university.edu"
         captured_messages = []
 
-        def dispatch_capture(spec, system, messages, max_tokens, temperature):
+        def dispatch_capture(spec, system, messages, max_tokens, temperature, response_schema=None):
             captured_messages.extend(messages)
             return _FAKE_RESPONSE
 

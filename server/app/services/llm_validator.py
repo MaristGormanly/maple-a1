@@ -164,8 +164,9 @@ async def validate_and_repair(
         return instance
 
     logger.warning(
-        "validate_and_repair: initial output invalid (%d error(s)); attempting one repair retry",
+        "validate_and_repair: initial output invalid (%d error(s)); attempting one repair retry — errors=%s",
         len(first_errors),
+        first_errors,
     )
 
     composed_prompt = _build_repair_prompt(repair_prompt, raw_json, first_errors)
