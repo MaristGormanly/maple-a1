@@ -8,12 +8,19 @@ export interface SubmissionData {
   commit_hash: string;
 }
 
+export interface TestCase {
+  name: string;
+  status: 'passed' | 'failed' | 'error' | 'skipped';
+  message: string | null;
+}
+
 export interface TestSummary {
   framework: string;
   passed: number;
   failed: number;
   errors: number;
   skipped: number;
+  tests?: TestCase[];
 }
 
 export interface LanguageInfo {

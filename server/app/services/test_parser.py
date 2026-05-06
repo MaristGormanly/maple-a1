@@ -50,6 +50,7 @@ def parse_test_results(stdout: str, stderr: str, exit_code: int | None) -> dict:
         (_detect_pytest, _parse_pytest),
         (_detect_junit, _parse_junit),
         (_detect_jest, _parse_jest),
+        (_detect_gtest, _parse_gtest),
     ):
         if detector(combined):
             tests = parser(combined)
@@ -151,9 +152,20 @@ _PYTEST_COUNT = re.compile(r"(\d+)\s+(passed|failed|error|skipped|warnings?)")
 _PYTEST_RESULT_LINE = re.compile(
     r"^(PASSED|FAILED|ERROR)\s+(.+?)(?:\s+-\s+(.+))?$", re.MULTILINE,
 )
+_PYTEST_FAIL_SUMMARY_LINE = re.compile(
+    r"^(?:FAILED|ERROR)\s+(.+?)\s+-\s+(.+)$", re.MULTILINE
+)
 _PYTEST_VERBOSE = re.compile(
     r"^(.+?)\s+(PASSED|FAILED|ERROR|SKIPPED)\s*(?:\[.*\])?\s*$", re.MULTILINE,
 )
+
+
+def _parse_pytest_failure_messages(text: str) -> dict[str, str]:
+    """Extract {test_name: error_message} from pytest short test summary lines."""
+    result: dict[str, str] = {}
+    for m in _PYTEST_FAIL_SUMMARY_LINE.finditer(text):
+        result[m.group(1).strip()] = m.group(2).strip()
+    return result
 
 
 def _detect_pytest(text: str) -> bool:
@@ -182,6 +194,20 @@ def _parse_pytest(text: str) -> list[dict]:
             raw_status = m.group(1).upper()
             status = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error"}.get(raw_status, "error")
             tests.append({"name": m.group(2).strip(), "status": status, "message": m.group(3)})
+
+    # Enrich failed/error tests with one-liner messages from the short summary section.
+    failure_msgs = _parse_pytest_failure_messages(text)
+    if failure_msgs:
+        for t in tests:
+            if t["status"] in ("failed", "error") and t["message"] is None:
+                name = t["name"]
+                msg = failure_msgs.get(name)
+                if msg is None:
+                    for k, v in failure_msgs.items():
+                        if name.endswith(k) or k.endswith(name):
+                            msg = v
+                            break
+                t["message"] = msg
 
     # Reconcile with the pytest summary line so truncated logs (log_normalizer
     # drops the middle of long traces) still produce accurate aggregate counts.
@@ -287,4 +313,26 @@ def _parse_jest(text: str) -> list[dict]:
             tests.append({"name": name, "status": "passed", "message": None})
         else:
             tests.append({"name": name, "status": "failed", "message": None})
+    return tests
+
+
+# ---------------------------------------------------------------------------
+# Google Test (C++)
+# ---------------------------------------------------------------------------
+
+_GTEST_DETECT = re.compile(r"^\[={10,}\] Running \d+ tests? from", re.MULTILINE)
+_GTEST_OK     = re.compile(r"^\[\s+OK\s+\]\s+(.+?)(?:\s+\(\d+ ms\))?$", re.MULTILINE)
+_GTEST_FAIL   = re.compile(r"^\[\s+FAILED\s+\]\s+(.+?)(?:\s+\(\d+ ms\))?$", re.MULTILINE)
+
+
+def _detect_gtest(text: str) -> bool:
+    return bool(_GTEST_DETECT.search(text))
+
+
+def _parse_gtest(text: str) -> list[dict]:
+    tests: list[dict] = []
+    for m in _GTEST_OK.finditer(text):
+        tests.append({"name": m.group(1).strip(), "status": "passed", "message": None})
+    for m in _GTEST_FAIL.finditer(text):
+        tests.append({"name": m.group(1).strip(), "status": "failed", "message": None})
     return tests

@@ -178,7 +178,7 @@
   <!-- Stats strip -->
   <div class="stats-row stats-row--6" style="margin-bottom:28px">
     <div class="stat-cell">
-      <div class="stat-cell__label">Score</div>
+      <div class="stat-cell__label">Rubric Score</div>
       <div class="stat-cell__value">{{score}}<small>/100</small></div>
     </div>
     @if (testSummary) {
@@ -204,6 +204,34 @@
     </div>
     }
   </div>
+
+  <!-- Individual test cases -->
+  @if (testCases.length > 0) {
+  <div style="margin-bottom:24px">
+    <button (click)="showTestCases = !showTestCases"
+            style="background:none;border:none;cursor:pointer;font:inherit;color:var(--ink-2);padding:0;display:flex;align-items:center;gap:6px">
+      <strong>{{testSummary!.passed}}/{{totalTests}} tests passed</strong>
+      <span>{{showTestCases ? '▲' : '▼'}}</span>
+    </button>
+    @if (showTestCases) {
+    <div style="margin:8px 0 0;display:flex;flex-direction:column;gap:6px">
+      @for (tc of testCases; track tc.name) {
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:var(--font-mono)">
+          <span [style.color]="tc.status === 'passed' ? 'var(--green)' : 'var(--red)'">
+            {{tc.status === 'passed' ? '✓' : '✗'}}
+          </span>
+          <span>{{tc.name}}</span>
+        </div>
+        @if (tc.status !== 'passed' && tc.message) {
+        <pre style="margin:0 0 0 20px;font-family:var(--font-mono);font-size:11px;background:var(--surface-2);color:var(--red);padding:6px 10px;border-radius:4px;white-space:pre-wrap;overflow-x:auto">{{tc.message}}</pre>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
 
   <!-- Tabs -->
   <div class="tabs">

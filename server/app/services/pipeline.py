@@ -281,6 +281,7 @@ async def run_pipeline(
                 "failed": parsed.get("failed", 0),
                 "errors": parsed.get("errors", 0),
                 "skipped": parsed.get("skipped", 0),
+                "tests": parsed.get("tests", []),
             },
         }
 

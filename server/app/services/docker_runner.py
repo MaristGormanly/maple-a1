@@ -122,7 +122,17 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         create_kwargs["tmpfs"] = config.tmpfs
 
     try:
-        container = client.containers.create(**create_kwargs)
+        try:
+            container = client.containers.create(**create_kwargs)
+        except ImageNotFound:
+            logger.info("Image %s not found locally; pulling from registry...", config.image)
+            try:
+                client.images.pull(config.image)
+            except (ImageNotFound, APIError):
+                raise DockerRunnerError(
+                    f"Image {config.image!r} not found locally and could not be pulled from registry"
+                ) from None
+            container = client.containers.create(**create_kwargs)
         container.start()
 
         wait_result = container.wait(timeout=timeout)

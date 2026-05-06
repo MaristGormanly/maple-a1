@@ -35,9 +35,12 @@ SANDBOX_PROFILES: dict[str, SandboxProfile] = {
     ),
     "java": SandboxProfile(
         language="java",
-        image="maven:3.9-openjdk-17-slim",
+        image="maven:3.9-eclipse-temurin-17",
         install_command=None,
-        test_command="mvn test -B",
+        test_command=(
+            "mvn test -B -Djava.io.tmpdir=/workspace 2>&1"
+            "; find target/surefire-reports -name '*.xml' -exec cat {} \\; 2>/dev/null"
+        ),
         working_dir="/workspace",
     ),
     "javascript": SandboxProfile(
@@ -52,6 +55,18 @@ SANDBOX_PROFILES: dict[str, SandboxProfile] = {
         image="node:20-slim",
         install_command="npm ci --ignore-scripts",
         test_command="npx jest --verbose",
+        working_dir="/workspace",
+    ),
+    "cpp": SandboxProfile(
+        language="cpp",
+        image="ubuntu:22.04",
+        install_command="apt-get update -qq && apt-get install -y -qq cmake g++ libgtest-dev 2>/dev/null",
+        test_command=(
+            "mkdir -p build"
+            " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 2>&1"
+            " && cmake --build build --parallel 2>&1"
+            " && cd build && ctest --output-on-failure 2>&1"
+        ),
         working_dir="/workspace",
     ),
 }

@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { EvaluationService } from '../../services/evaluation.service';
 import {
   CriterionScore, LanguageInfo, RecommendationObject, ReviewRequest,
-  SubmissionData, SubmissionStatusData, TestSummary,
+  SubmissionData, SubmissionStatusData, TestCase, TestSummary,
 } from '../../utils/api.types';
 import { CriteriaScoresComponent } from '../../components/criteria-scores/criteria-scores.component';
 import { DiffViewerComponent } from '../../components/diff-viewer/diff-viewer.component';
@@ -38,6 +38,7 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
   activeTab: 'scores' | 'diff' = 'scores';
   showDeleteDialog = false;
+  showTestCases = false;
   deleteLoading = false;
   showOverrideInput = false;
   overrideNotes = '';
@@ -131,10 +132,21 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   get isRejected(): boolean {
     return this.status === 'Rejected';
   }
-  get score(): number { return this.statusData?.evaluation?.deterministic_score ?? 0; }
+  get score(): number {
+    const criteria = this.statusData?.evaluation?.ai_feedback?.criteria_scores ?? [];
+    if (criteria.length > 0) {
+      const avg = criteria.reduce((sum: number, c: any) => sum + (c.score ?? 0), 0) / criteria.length;
+      return Math.round(avg);
+    }
+    return Math.round(this.statusData?.evaluation?.deterministic_score ?? 0);
+  }
 
   get testSummary(): TestSummary | null {
     return this.statusData?.evaluation?.metadata?.test_summary ?? null;
+  }
+
+  get testCases(): TestCase[] {
+    return this.statusData?.evaluation?.metadata?.test_summary?.tests ?? [];
   }
 
   get totalTests(): number {
