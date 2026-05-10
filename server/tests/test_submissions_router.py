@@ -24,10 +24,13 @@ def _submission(*, student_id: uuid.UUID, instructor_id: uuid.UUID):
         commit_hash="abc123",
         status="Pending",
         created_at=datetime.now(timezone.utc),
+        student=None,
+        student_name=None,
         evaluation_result=None,
         assignment=SimpleNamespace(
             id=assignment_id,
             instructor_id=instructor_id,
+            rubric=None,
         ),
     )
 

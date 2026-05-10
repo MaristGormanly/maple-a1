@@ -4,15 +4,15 @@ import { FormsModule } from '@angular/forms';
 
 import { EvaluationService } from '../../services/evaluation.service';
 import {
-  CriterionScore, LanguageInfo, RecommendationObject, ReviewRequest,
-  RubricCriterion, SubmissionData, SubmissionStatusData, TestCase, TestSummary,
+  CriterionOverride, CriterionScore, LanguageInfo, RecommendationObject, ReviewRequest,
+  RubricCriterion, ScoreLevel, SubmissionData, SubmissionStatusData, TestCase, TestSummary,
 } from '../../utils/api.types';
 import { CriteriaScoresComponent } from '../../components/criteria-scores/criteria-scores.component';
 import { DiffViewerComponent } from '../../components/diff-viewer/diff-viewer.component';
 import { ConfirmDialogComponent } from '../../components/confirm-dialog/confirm-dialog.component';
 import { badgeTone, displayStatus } from '../../utils/status-display.util';
 
-const TERMINAL_STATUSES = new Set(['Completed', 'Failed', 'Awaiting Review', 'Rejected', 'EVALUATION_FAILED']);
+const TERMINAL_STATUSES = new Set(['Completed', 'Failed', 'Awaiting Review', 'Overridden', 'EVALUATION_FAILED']);
 const POLL_INTERVAL_MS = 3000;
 
 interface PipelineStage {
@@ -43,9 +43,16 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   deleteLoading = false;
   showOverrideInput = false;
   overrideNotes = '';
+  overrideStudentComment = '';
+  overrideRows: CriterionOverride[] = [];
   reviewSubmitting = false;
   reviewError: string | null = null;
   reviewRecorded = false;
+
+  readonly scoreLevels: ScoreLevel[] = ['Exemplary', 'Proficient', 'Developing', 'Beginning'];
+  readonly levelScores: Record<string, number> = {
+    Exemplary: 100, Proficient: 75, Developing: 50, Beginning: 25,
+  };
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -130,8 +137,16 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     return this.statusData?.evaluation?.instructor_notes ?? null;
   }
 
-  get isRejected(): boolean {
-    return this.status === 'Rejected';
+  get isOverridden(): boolean {
+    return this.status === 'Overridden';
+  }
+
+  get overrideGrades(): CriterionOverride[] {
+    return this.statusData?.evaluation?.override_grades ?? [];
+  }
+
+  get studentComment(): string | null {
+    return this.statusData?.evaluation?.student_comment ?? null;
   }
   get score(): number {
     const criteria = this.statusData?.evaluation?.ai_feedback?.criteria_scores ?? [];
@@ -196,7 +211,7 @@ export class StatusPageComponent implements OnInit, OnDestroy {
     return (
       this.status === 'Completed' ||
       this.status === 'Awaiting Review' ||
-      this.status === 'Rejected'
+      this.status === 'Overridden'
     );
   }
 
@@ -243,7 +258,7 @@ export class StatusPageComponent implements OnInit, OnDestroy {
       },
       {
         key: 'review', label: 'Awaiting your review', hint: 'Feedback held until you approve',
-        done: s === 'Completed',
+        done: s === 'Completed' || s === 'Overridden',
         active: s === 'Awaiting Review',
         failed: false,
       },
@@ -261,11 +276,33 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   abbrev(value: string): string { return value.slice(0, 12); }
 
   onApprove(): void { this.submitReview({ action: 'approve' }); }
-  onOverrideOpen(): void { this.showOverrideInput = true; this.reviewError = null; }
-  onOverrideCancel(): void { this.showOverrideInput = false; this.overrideNotes = ''; }
+
+  onOverrideOpen(): void {
+    this.overrideRows = this.criteriaScores.map(c => ({
+      criterion_name: c.criterion_name,
+      level: (c.level === 'NEEDS_HUMAN_REVIEW' ? 'Developing' : c.level) as ScoreLevel,
+      score: c.score,
+    }));
+    this.overrideStudentComment = '';
+    this.overrideNotes = '';
+    this.showOverrideInput = true;
+    this.reviewError = null;
+  }
+
+  onOverrideCancel(): void {
+    this.showOverrideInput = false;
+    this.overrideRows = [];
+    this.overrideNotes = '';
+    this.overrideStudentComment = '';
+  }
 
   onOverrideSubmit(): void {
-    this.submitReview({ action: 'reject', instructor_notes: this.overrideNotes || undefined });
+    this.submitReview({
+      action: 'override',
+      override_grades: this.overrideRows,
+      student_comment: this.overrideStudentComment || undefined,
+      instructor_notes: this.overrideNotes || undefined,
+    });
   }
 
   private submitReview(request: ReviewRequest): void {
@@ -277,11 +314,14 @@ export class StatusPageComponent implements OnInit, OnDestroy {
       if (response.success && response.data) {
         this.statusData = response.data;
         this.showOverrideInput = false;
+        this.overrideRows = [];
         this.overrideNotes = '';
+        this.overrideStudentComment = '';
         this.reviewRecorded = true;
       } else {
         this.reviewError = response.error?.message ?? 'Review action failed.';
       }
+      this.cdr.detectChanges();
     });
   }
 

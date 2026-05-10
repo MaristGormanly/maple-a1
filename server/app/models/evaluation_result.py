@@ -21,6 +21,8 @@ class EvaluationResult(Base):
         String, nullable=False, server_default="pending"
     )
     instructor_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    override_grades: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    student_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

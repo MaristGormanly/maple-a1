@@ -18,7 +18,9 @@ router = APIRouter(prefix="/submissions", tags=["submissions"])
 
 
 class ReviewRequest(BaseModel):
-    action: Literal["approve", "reject"]
+    action: Literal["approve", "override"]
+    override_grades: list[dict] | None = None
+    student_comment: str | None = None
     instructor_notes: str | None = None
 
 
@@ -102,6 +104,8 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
             "deterministic_score": er.deterministic_score,
             "review_status": review_status,
             "instructor_notes": instructor_notes,
+            "override_grades": getattr(er, "override_grades", None),
+            "student_comment": getattr(er, "student_comment", None),
             "ai_feedback": None,
         }
 
@@ -294,10 +298,12 @@ async def review_submission(
     if body.action == "approve":
         submission.status = "Completed"
         submission.evaluation_result.review_status = "approved"
-    else:
-        submission.status = "Rejected"
-        submission.evaluation_result.review_status = "rejected"
+    else:  # override
+        submission.status = "Overridden"
+        submission.evaluation_result.review_status = "overridden"
         submission.evaluation_result.instructor_notes = body.instructor_notes
+        submission.evaluation_result.override_grades = body.override_grades
+        submission.evaluation_result.student_comment = body.student_comment
 
     await db.commit()
     await db.refresh(submission)

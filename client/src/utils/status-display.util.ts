@@ -11,7 +11,7 @@ const BADGE_TONE: Record<string, string> = {
   'In Progress': 'blue',
   'Awaiting Review': 'amber',
   Completed: 'green',
-  Rejected: 'red',
+  Overridden: 'amber',
   Error: 'red',
 };
 

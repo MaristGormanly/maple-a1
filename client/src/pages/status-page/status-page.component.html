@@ -34,79 +34,159 @@
   @if (reviewRecorded) {
   <div style="margin-bottom:20px">
     <div class="banner banner--info" role="alert">
-      <span class="banner__icon"><svg width="16" height="16">
-          <use href="#icon-info" />
-        </svg></span>
+      <span class="banner__icon"><svg width="16" height="16"><use href="#icon-info" /></svg></span>
       <div class="banner__copy">
         <div class="banner__title">Review recorded</div>
         <div class="banner__body">
-          @if (isRejected) {
-          Override saved. AI feedback was withheld from the student.
-          } @else {
-          Approved feedback is now visible to the student.
-          }
+          @if (isOverridden) { Override saved. Students will see your adjusted grades and comment. }
+          @else { Approved feedback is now visible to the student. }
         </div>
       </div>
     </div>
   </div>
   }
-  @if (isRejected && instructorNotes) {
-  <div style="margin-bottom:20px">
-    <div class="banner banner--error" role="note">
-      <span class="banner__icon"><svg width="16" height="16">
-          <use href="#icon-warn" />
-        </svg></span>
-      <div class="banner__copy">
-        <div class="banner__title">Instructor override notes</div>
-        <div class="banner__body" style="white-space:pre-wrap">{{ instructorNotes }}</div>
+
+  <!-- Saved override data -->
+  @if (isOverridden) {
+    @if (instructorNotes) {
+    <div style="margin-bottom:16px">
+      <div class="banner banner--error" role="note">
+        <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn" /></svg></span>
+        <div class="banner__copy">
+          <div class="banner__title">Instructor notes (private)</div>
+          <div class="banner__body" style="white-space:pre-wrap">{{ instructorNotes }}</div>
+        </div>
       </div>
     </div>
-  </div>
+    }
+    @if (studentComment) {
+    <div style="margin-bottom:16px">
+      <div class="banner banner--info" role="note">
+        <span class="banner__icon"><svg width="16" height="16"><use href="#icon-info" /></svg></span>
+        <div class="banner__copy">
+          <div class="banner__title">Student comment</div>
+          <div class="banner__body" style="white-space:pre-wrap">{{ studentComment }}</div>
+        </div>
+      </div>
+    </div>
+    }
+    @if (overrideGrades.length > 0) {
+    <div class="card card--quiet" style="margin-bottom:24px">
+      <div class="card__body" style="padding:14px 18px 6px;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:13px">Instructor-adjusted grades</div>
+      </div>
+      <div class="card__body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="padding:10px 18px;text-align:left;font-weight:600;color:var(--ink-2)">Criterion</th>
+              <th style="padding:10px 18px;text-align:left;font-weight:600;color:var(--ink-2)">Level</th>
+              <th style="padding:10px 18px;text-align:right;font-weight:600;color:var(--ink-2)">Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (g of overrideGrades; track g.criterion_name) {
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 18px">{{ g.criterion_name }}</td>
+              <td style="padding:10px 18px">
+                <span class="badge"
+                  [class.badge--green]="g.level === 'Exemplary' || g.level === 'Proficient'"
+                  [class.badge--amber]="g.level === 'Developing'"
+                  [class.badge--red]="g.level === 'Beginning'">
+                  {{ g.level }}
+                </span>
+              </td>
+              <td style="padding:10px 18px;text-align:right;font-weight:600">{{ g.score }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+    }
   }
+
   @if (showReviewPanel && !reviewRecorded) {
   <div class="review-panel" style="margin-bottom:24px">
     <div class="review-panel__icon">
-      <svg width="20" height="20">
-        <use href="#icon-shield" />
-      </svg>
+      <svg width="20" height="20"><use href="#icon-shield" /></svg>
     </div>
     <div class="review-panel__body">
       <div class="review-panel__title">Instructor review required</div>
       <p class="review-panel__hint">
-        Approve to release this AI feedback to the student. Override if the AI got something wrong.
+        Approve to release this AI feedback to the student. Override to adjust grades and leave feedback.
       </p>
       @if (reviewError) {
       <div class="alert-inline" style="margin-bottom:12px" role="alert">
-        <svg width="14" height="14">
-          <use href="#icon-warn" />
-        </svg>
+        <svg width="14" height="14"><use href="#icon-warn" /></svg>
         {{reviewError}}
       </div>
       }
       @if (!showOverrideInput) {
       <div class="review-panel__actions">
         <button class="btn btn--success" [disabled]="reviewSubmitting" (click)="onApprove()">
-          <svg width="14" height="14">
-            <use href="#icon-check" />
-          </svg>
+          <svg width="14" height="14"><use href="#icon-check" /></svg>
           @if (reviewSubmitting) { Saving… } @else { Approve &amp; release }
         </button>
         <button class="btn btn--outline-danger" [disabled]="reviewSubmitting" (click)="onOverrideOpen()">
-          <svg width="14" height="14">
-            <use href="#icon-x" />
-          </svg>
+          <svg width="14" height="14"><use href="#icon-x" /></svg>
           Override…
         </button>
       </div>
       } @else {
-      <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Grade override table -->
+        @if (overrideRows.length > 0) {
         <div class="field">
-          <label class="field__label">Override notes</label>
-          <span class="field__hint">Describe what the AI got wrong. Used internally — not shown to the student.</span>
-          <textarea class="textarea" rows="4"
-            placeholder="e.g. AI marked Edge Case Handling as Proficient but missed the empty-root deletion case; should be Developing."
+          <label class="field__label">Adjust rubric grades</label>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--ink-2)">Criterion</th>
+                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--ink-2)">AI Level</th>
+                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--ink-2)">Override</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of overrideRows; track row.criterion_name; let i = $index) {
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:8px 12px">{{ row.criterion_name }}</td>
+                <td style="padding:8px 12px;color:var(--ink-3)">{{ criteriaScores[i]?.level }}</td>
+                <td style="padding:8px 12px">
+                  <select class="select" style="font-size:13px;padding:4px 8px"
+                    [(ngModel)]="row.level"
+                    (ngModelChange)="row.score = levelScores[$event] ?? row.score">
+                    @for (lvl of scoreLevels; track lvl) {
+                    <option [value]="lvl">{{ lvl }}</option>
+                    }
+                  </select>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+
+        <!-- Student-facing comment -->
+        <div class="field">
+          <label class="field__label">Comment for student</label>
+          <span class="field__hint">Visible to the student alongside the adjusted grades.</span>
+          <textarea class="textarea" rows="3"
+            placeholder="e.g. Edge case handling was marked Proficient by AI but the empty-root case was missed — adjusted to Developing."
+            [(ngModel)]="overrideStudentComment"></textarea>
+        </div>
+
+        <!-- Private instructor notes -->
+        <div class="field">
+          <label class="field__label">Instructor notes (private)</label>
+          <span class="field__hint">Internal only — not shown to the student.</span>
+          <textarea class="textarea" rows="2"
+            placeholder="Optional: record your rationale for this override."
             [(ngModel)]="overrideNotes"></textarea>
         </div>
+
         <div class="review-panel__actions">
           <button class="btn btn--danger" [disabled]="reviewSubmitting" (click)="onOverrideSubmit()">
             @if (reviewSubmitting) { Saving… } @else { Submit override }

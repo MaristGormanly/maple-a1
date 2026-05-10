@@ -65,10 +65,18 @@ export interface AiFeedback {
   recommendations: RecommendationObject[];
 }
 
+export interface CriterionOverride {
+  criterion_name: string;
+  level: ScoreLevel;
+  score: number;
+}
+
 export interface EvaluationResult {
   deterministic_score: number | null;
   review_status?: string;
   instructor_notes?: string | null;
+  override_grades?: CriterionOverride[] | null;
+  student_comment?: string | null;
   ai_feedback?: AiFeedback | null;
   metadata?: {
     language: LanguageInfo | null;
@@ -147,7 +155,9 @@ export interface SubmissionResponse {
 }
 
 export interface ReviewRequest {
-  action: 'approve' | 'reject';
+  action: 'approve' | 'override';
+  override_grades?: CriterionOverride[];
+  student_comment?: string;
   instructor_notes?: string;
 }
 
