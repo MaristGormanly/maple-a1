@@ -11,6 +11,7 @@ export interface AssignmentCreateRequest {
   rubric_id?: string | null;
   enable_lint_review: boolean;
   language_override?: string | null;
+  test_discovery_mode: 'instructor_suite' | 'auto_discover';
 }
 
 export interface AssignmentData {
@@ -21,6 +22,7 @@ export interface AssignmentData {
   rubric_id: string | null;
   enable_lint_review: boolean;
   language_override: string | null;
+  test_discovery_mode: 'instructor_suite' | 'auto_discover';
 }
 
 export interface AssignmentResponse {

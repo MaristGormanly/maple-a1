@@ -17,6 +17,7 @@ export class AssignmentPageComponent {
   languageOverride = '';
   rubricId = '';
   enableLintReview = true;
+  testDiscoveryMode: 'instructor_suite' | 'auto_discover' = 'instructor_suite';
 
   readonly saving = signal(false);
   readonly saved = signal(false);
@@ -25,8 +26,12 @@ export class AssignmentPageComponent {
 
   create(): void {
     if (this.saving()) return;
-    if (!this.title.trim() || !this.testSuiteRepoUrl.trim()) {
-      this.errorMessage.set('Title and test suite repository are required.');
+    if (!this.title.trim()) {
+      this.errorMessage.set('Assignment title is required.');
+      return;
+    }
+    if (this.testDiscoveryMode === 'instructor_suite' && !this.testSuiteRepoUrl.trim()) {
+      this.errorMessage.set('A test suite repository URL is required in Instructor suite mode.');
       return;
     }
     if (this.rubricId && !this.isValidUuid(this.rubricId)) {
@@ -44,6 +49,7 @@ export class AssignmentPageComponent {
         rubric_id: this.rubricId.trim() || null,
         enable_lint_review: this.enableLintReview,
         language_override: this.languageOverride.trim() || null,
+        test_discovery_mode: this.testDiscoveryMode,
       })
       .subscribe((response) => {
         this.saving.set(false);

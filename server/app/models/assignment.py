@@ -20,6 +20,7 @@ class Assignment(Base):
     )
     enable_lint_review: Mapped[bool] = mapped_column(Boolean, default=False)
     language_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    test_discovery_mode: Mapped[str] = mapped_column(String, nullable=False, default="instructor_suite")
 
     instructor = relationship("User", back_populates="assignments")
     rubric = relationship("Rubric", back_populates="assignments")

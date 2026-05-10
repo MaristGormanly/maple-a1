@@ -87,15 +87,54 @@
     </div>
     <div class="card__body" style="display:flex;flex-direction:column;gap:18px">
       <div class="field">
-        <label class="field__label">Test suite repository <span class="field__req">*</span></label>
-        <span class="field__hint">Cloned with your instructor PAT and run inside the Docker sandbox against each submission.</span>
-        <div class="input-wrap">
-          <span class="input-wrap__adorn">
-            <svg width="14" height="14"><use href="#icon-github"/></svg>
-          </span>
-          <input class="input input--mono" [(ngModel)]="testSuiteRepoUrl" [disabled]="saving()" />
+        <label class="field__label">Test mode <span class="field__req">*</span></label>
+        <span class="field__hint">Choose how the pipeline locates tests for student submissions.</span>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <input
+              type="radio"
+              name="testDiscoveryMode"
+              value="instructor_suite"
+              [checked]="testDiscoveryMode === 'instructor_suite'"
+              (change)="testDiscoveryMode = 'instructor_suite'"
+              [disabled]="saving()"
+              style="margin-top:2px"
+            />
+            <span>
+              <span style="font-weight:600;color:var(--ink);font-size:13px">Instructor suite</span>
+              <span class="muted" style="font-size:12px;margin-left:4px">— provide a GitHub repo containing your test files</span>
+            </span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <input
+              type="radio"
+              name="testDiscoveryMode"
+              value="auto_discover"
+              [checked]="testDiscoveryMode === 'auto_discover'"
+              (change)="testDiscoveryMode = 'auto_discover'"
+              [disabled]="saving()"
+              style="margin-top:2px"
+            />
+            <span>
+              <span style="font-weight:600;color:var(--ink);font-size:13px">Auto-discover</span>
+              <span class="muted" style="font-size:12px;margin-left:4px">— AI inspects the student repo and runs its built-in test suite</span>
+            </span>
+          </label>
         </div>
       </div>
+
+      @if (testDiscoveryMode === 'instructor_suite') {
+        <div class="field">
+          <label class="field__label">Test suite repository <span class="field__req">*</span></label>
+          <span class="field__hint">Cloned with your instructor PAT and run inside the Docker sandbox against each submission.</span>
+          <div class="input-wrap">
+            <span class="input-wrap__adorn">
+              <svg width="14" height="14"><use href="#icon-github"/></svg>
+            </span>
+            <input class="input input--mono" [(ngModel)]="testSuiteRepoUrl" [disabled]="saving()" />
+          </div>
+        </div>
+      }
 
       <div class="field">
         <label class="field__label">Language override</label>

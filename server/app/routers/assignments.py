@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -25,6 +25,7 @@ class AssignmentCreateRequest(BaseModel):
     rubric_id: Optional[str] = None
     enable_lint_review: bool = False
     language_override: Optional[str] = None
+    test_discovery_mode: Literal["instructor_suite", "auto_discover"] = "instructor_suite"
 
 
 def _assignment_to_dict(a, submission_count: int = 0) -> dict:
@@ -36,6 +37,7 @@ def _assignment_to_dict(a, submission_count: int = 0) -> dict:
         "rubric_id": str(a.rubric_id) if a.rubric_id else None,
         "enable_lint_review": a.enable_lint_review,
         "language_override": a.language_override,
+        "test_discovery_mode": getattr(a, "test_discovery_mode", "instructor_suite"),
         "submission_count": submission_count,
     }
 
@@ -83,6 +85,7 @@ async def create_assignment_endpoint(
         rubric_id=rubric_uuid,
         enable_lint_review=request.enable_lint_review,
         language_override=request.language_override,
+        test_discovery_mode=request.test_discovery_mode,
     )
 
     return success_response(_assignment_to_dict(assignment))

@@ -48,8 +48,9 @@ from .ai_passes import run_pass1, run_pass2, run_pass3
 from .assignments import get_assignment_by_id
 from .ast_chunker import CodeChunk, extract_chunks
 from .docker_client import run_container
+from .test_discoverer import DiscoveredTestPlan, discover_tests
 from .git_ingest import CloneError, clone_repository
-from .language_detector import detect_language_version
+from .language_detector import detect_language_version, parse_major_version
 from .llm_validator import EvaluationFailedError
 from .review_flags import compute_review_flags, determine_terminal_status
 from .scoring import calculate_deterministic_score
@@ -180,7 +181,9 @@ async def run_pipeline(
                 await update_submission_status(db, submission_id, "Failed")
                 return
             suite_url = (assignment.test_suite_repo_url or "").strip()
-            if not suite_url:
+            _raw_mode = getattr(assignment, "test_discovery_mode", None)
+            test_discovery_mode = _raw_mode if _raw_mode in ("instructor_suite", "auto_discover") else "instructor_suite"
+            if test_discovery_mode == "instructor_suite" and not suite_url:
                 await update_submission_status(db, submission_id, "Failed")
                 return
             language_override = assignment.language_override
@@ -198,35 +201,66 @@ async def run_pipeline(
                 run_id=str(submission_id)[:8],
             )
 
-        test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
-        clone_impl = _resolve_clone_repository()
-        _dlog(
-            location="pipeline.py:run_pipeline:clone_start",
-            hypothesis_id="A,B",
-            message="about to clone test suite",
-            data={"submission_id": str(submission_id), "suite_url": suite_url},
-            run_id=str(submission_id)[:8],
-        )
-        try:
-            await clone_impl(suite_url, test_suite_dir, github_pat)
-        except CloneError as exc:
-            shutil.rmtree(test_suite_dir, ignore_errors=True)
-            logger.error("run_pipeline: test suite clone failed: %s", exc.message)
-            await update_submission_status(db, submission_id, "Failed")
-            return
-        _dlog(
-            location="pipeline.py:run_pipeline:clone_done",
-            hypothesis_id="A,B",
-            message="test suite cloned successfully",
-            data={
-                "submission_id": str(submission_id),
-                "test_suite_dir": str(test_suite_dir),
-            },
-            run_id=str(submission_id)[:8],
-        )
-
         lang = detect_language_version(student_repo_path, language_override)
         language = lang.get("language", "")
+        required_version = parse_major_version(language, lang.get("version"))
+
+        _discovered_plan: DiscoveredTestPlan | None = None
+
+        if test_discovery_mode == "auto_discover":
+            _dlog(
+                location="pipeline.py:run_pipeline:auto_discover_start",
+                hypothesis_id="A,B",
+                message="auto_discover: calling test_discoverer",
+                data={"submission_id": str(submission_id)},
+                run_id=str(submission_id)[:8],
+            )
+            _discovered_plan = await discover_tests(student_repo_path)
+            logger.info(
+                "run_pipeline: auto_discover finished — has_tests=%s framework=%s "
+                "confidence=%.2f command=%r",
+                _discovered_plan.has_tests,
+                _discovered_plan.framework,
+                _discovered_plan.confidence,
+                _discovered_plan.command,
+            )
+            if not _discovered_plan.has_tests:
+                logger.warning(
+                    "run_pipeline: auto_discover found no tests for submission %s — %s",
+                    submission_id,
+                    _discovered_plan.reasoning,
+                )
+                async with async_session_maker() as db:
+                    await update_submission_status(db, submission_id, "Failed")
+                return
+        else:
+            test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
+            clone_impl = _resolve_clone_repository()
+            _dlog(
+                location="pipeline.py:run_pipeline:clone_start",
+                hypothesis_id="A,B",
+                message="about to clone test suite",
+                data={"submission_id": str(submission_id), "suite_url": suite_url},
+                run_id=str(submission_id)[:8],
+            )
+            try:
+                await clone_impl(suite_url, test_suite_dir, github_pat)
+            except CloneError as exc:
+                shutil.rmtree(test_suite_dir, ignore_errors=True)
+                logger.error("run_pipeline: test suite clone failed: %s", exc.message)
+                await update_submission_status(db, submission_id, "Failed")
+                return
+            _dlog(
+                location="pipeline.py:run_pipeline:clone_done",
+                hypothesis_id="A,B",
+                message="test suite cloned successfully",
+                data={
+                    "submission_id": str(submission_id),
+                    "test_suite_dir": str(test_suite_dir),
+                },
+                run_id=str(submission_id)[:8],
+            )
+
         _dlog(
             location="pipeline.py:run_pipeline:container_start",
             hypothesis_id="A,B",
@@ -235,17 +269,30 @@ async def run_pipeline(
                 "submission_id": str(submission_id),
                 "language": language,
                 "timeout_seconds": _CONTAINER_TIMEOUT_SECONDS,
+                "test_discovery_mode": test_discovery_mode,
             },
             run_id=str(submission_id)[:8],
         )
         _container_run_error: str | None = None
         try:
-            container = await run_container(
-                language,
-                student_repo_path,
-                str(test_suite_dir.resolve()),
-                timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
-            )
+            if _discovered_plan is not None:
+                container = await run_container(
+                    language,
+                    student_repo_path,
+                    None,
+                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+                    discovered_command=_discovered_plan.command,
+                    discovered_working_dir=_discovered_plan.working_dir,
+                    required_version=required_version,
+                )
+            else:
+                container = await run_container(
+                    language,
+                    student_repo_path,
+                    str(test_suite_dir.resolve()),
+                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+                    required_version=required_version,
+                )
         except Exception as _exc:
             _container_run_error = str(_exc)
             logger.warning(
@@ -254,6 +301,21 @@ async def run_pipeline(
             )
             from .docker_client import ContainerResult as _ContainerResult
             container = _ContainerResult(stdout="", stderr="", exit_code=None)
+
+        if container.version_mismatch:
+            _mismatch_note = (
+                f"[MAPLE] Version mismatch: project requires {language} {required_version}, "
+                f"container provides {container.container_runtime_version}. "
+                "Build failure below is likely due to this incompatibility, not a code logic error.\n"
+            )
+            logger.warning(
+                "run_pipeline: version mismatch for submission %s — required=%s available=%s",
+                submission_id,
+                required_version,
+                container.container_runtime_version,
+            )
+            from dataclasses import replace as _dc_replace
+            container = _dc_replace(container, stderr=_mismatch_note + (container.stderr or ""))
 
         _dlog(
             location="pipeline.py:run_pipeline:container_done",
@@ -284,6 +346,19 @@ async def run_pipeline(
                 "tests": parsed.get("tests", []),
             },
         }
+        if container.version_mismatch:
+            metadata_json["version_mismatch"] = {
+                "required": required_version,
+                "available": container.container_runtime_version,
+                "language": language,
+            }
+        if _discovered_plan is not None:
+            metadata_json["test_discovery"] = {
+                "framework": _discovered_plan.framework,
+                "command": _discovered_plan.command,
+                "confidence": _discovered_plan.confidence,
+                "reasoning": _discovered_plan.reasoning,
+            }
 
         # Persist deterministic results first; status transitions are
         # decided by whether the AI phase will run.  We deliberately

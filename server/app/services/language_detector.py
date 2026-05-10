@@ -112,15 +112,17 @@ def _detect_java(root: Path) -> dict | None:
             if props is None:
                 props = tree.find(".//properties")
             if props is not None:
-                jv = props.find("m:java.version", ns)
-                if jv is None:
-                    jv = props.find("java.version")
-                if jv is not None and jv.text:
-                    return {
-                        "language": "java",
-                        "version": jv.text.strip(),
-                        "source": "pom.xml",
-                    }
+                # Priority: maven.compiler.release > java.version > maven.compiler.source
+                for tag in ("maven.compiler.release", "java.version", "maven.compiler.source"):
+                    jv = props.find(f"m:{tag}", ns)
+                    if jv is None:
+                        jv = props.find(tag)
+                    if jv is not None and jv.text:
+                        return {
+                            "language": "java",
+                            "version": jv.text.strip(),
+                            "source": "pom.xml",
+                        }
             return {"language": "java", "version": None, "source": "pom.xml"}
         except Exception:
             return {"language": "java", "version": None, "source": "pom.xml"}
@@ -151,3 +153,38 @@ def _detect_cpp(root: Path) -> dict | None:
     m = _CMAKE_STD.search(text)
     version = m.group(1) if m else None
     return {"language": "cpp", "version": version, "source": "CMakeLists.txt"}
+
+
+# Strips operator prefixes like >=, ^, ~, ==
+_VERSION_PREFIX = re.compile(r"^[><=^~!*]+")
+# Extracts the first numeric segment(s) from a version string
+_VERSION_DIGITS = re.compile(r"(\d+)(?:\.(\d+))?")
+
+
+def parse_major_version(language: str, version_str: str | None) -> int | None:
+    """Normalize a version string to a comparable integer for sandbox profile selection.
+
+    Encoding:
+      - Java/Node: major integer  (e.g. "21" → 21, ">=17" → 17)
+      - Python: major*100 + minor (e.g. ">=3.11" → 311, "3.12" → 312)
+
+    Returns None when the version string is absent or unparseable.
+    """
+    if not version_str:
+        return None
+
+    cleaned = _VERSION_PREFIX.sub("", version_str.strip()).strip()
+    m = _VERSION_DIGITS.match(cleaned)
+    if not m:
+        return None
+
+    major = int(m.group(1))
+    minor_str = m.group(2)
+
+    lang = (language or "").lower()
+    if lang == "python":
+        minor = int(minor_str) if minor_str else 0
+        return major * 100 + minor
+
+    # Java, Node, C++ — use major only
+    return major

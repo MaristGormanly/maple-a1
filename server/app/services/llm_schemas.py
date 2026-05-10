@@ -293,6 +293,28 @@ PASS3_OUTPUT_SCHEMA: Final[dict] = {
 
 
 # ---------------------------------------------------------------------------
+# Test Discovery Schema
+# ---------------------------------------------------------------------------
+
+DISCOVERY_OUTPUT_SCHEMA: Final[dict] = {
+    "$schema": JSON_SCHEMA_DIALECT,
+    "$id": "https://maple-a1/schemas/llm/test_discovery.json",
+    "title": "MAPLE A1 Test Discovery Output",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["command", "working_dir", "framework", "reasoning", "confidence", "has_tests"],
+    "properties": {
+        "command":     {"type": "string"},
+        "working_dir": {"type": "string"},
+        "framework":   {"type": "string"},
+        "reasoning":   {"type": "string", "minLength": 1},
+        "confidence":  {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "has_tests":   {"type": "boolean"},
+    },
+}
+
+
+# ---------------------------------------------------------------------------
 # Public registry — handy for the validator/repair module to look up by name
 # ---------------------------------------------------------------------------
 
@@ -301,6 +323,7 @@ SCHEMA_REGISTRY: Final[dict[str, dict]] = {
     "pass2": PASS2_OUTPUT_SCHEMA,
     "pass3": PASS3_OUTPUT_SCHEMA,
     "recommendation_object": RECOMMENDATION_OBJECT_SCHEMA,
+    "test_discovery": DISCOVERY_OUTPUT_SCHEMA,
 }
 
 
@@ -314,6 +337,7 @@ def get_schema(name: str) -> dict:
 
 
 __all__ = [
+    "DISCOVERY_OUTPUT_SCHEMA",
     "FAILURE_CLASSIFICATIONS",
     "JSON_SCHEMA_DIALECT",
     "KNOWN_FLAGS",

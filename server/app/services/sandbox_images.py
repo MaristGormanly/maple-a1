@@ -11,7 +11,7 @@ Design-doc references:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -23,90 +23,171 @@ class SandboxProfile:
     install_command: str | None
     test_command: str
     working_dir: str
+    runtime_version: int | None = field(default=None)
+    # runtime_version encoding:
+    #   Java/Node: major integer (e.g. 21, 17, 11, 20, 18)
+    #   Python: major*100 + minor (e.g. 312 = 3.12, 311 = 3.11)
 
 
-SANDBOX_PROFILES: dict[str, SandboxProfile] = {
-    "python": SandboxProfile(
+_JAVA_TEST_COMMAND = (
+    "mvn test -B -Djava.io.tmpdir=/workspace 2>&1"
+    "; find target/surefire-reports -name '*.xml' -exec cat {} \\; 2>/dev/null"
+)
+
+_JAVA_PROFILES: list[SandboxProfile] = [
+    SandboxProfile(
+        language="java",
+        image="maven:3.9-eclipse-temurin-8",
+        install_command=None,
+        test_command=_JAVA_TEST_COMMAND,
+        working_dir="/workspace",
+        runtime_version=8,
+    ),
+    SandboxProfile(
+        language="java",
+        image="maven:3.9-eclipse-temurin-11",
+        install_command=None,
+        test_command=_JAVA_TEST_COMMAND,
+        working_dir="/workspace",
+        runtime_version=11,
+    ),
+    SandboxProfile(
+        language="java",
+        image="maven:3.9-eclipse-temurin-17",
+        install_command=None,
+        test_command=_JAVA_TEST_COMMAND,
+        working_dir="/workspace",
+        runtime_version=17,
+    ),
+    SandboxProfile(
+        language="java",
+        image="maven:3.9-eclipse-temurin-21",
+        install_command=None,
+        test_command=_JAVA_TEST_COMMAND,
+        working_dir="/workspace",
+        runtime_version=21,
+    ),
+]
+
+_PYTHON_PROFILES: list[SandboxProfile] = [
+    SandboxProfile(
+        language="python",
+        image="python:3.10-slim",
+        install_command="pip install --no-cache-dir -r requirements.txt",
+        test_command="python -m pytest --tb=short -v --continue-on-collection-errors",
+        working_dir="/workspace",
+        runtime_version=310,
+    ),
+    SandboxProfile(
+        language="python",
+        image="python:3.11-slim",
+        install_command="pip install --no-cache-dir -r requirements.txt",
+        test_command="python -m pytest --tb=short -v --continue-on-collection-errors",
+        working_dir="/workspace",
+        runtime_version=311,
+    ),
+    SandboxProfile(
         language="python",
         image="python:3.12-slim",
         install_command="pip install --no-cache-dir -r requirements.txt",
         test_command="python -m pytest --tb=short -v --continue-on-collection-errors",
         working_dir="/workspace",
+        runtime_version=312,
     ),
-    "java": SandboxProfile(
-        language="java",
-        image="maven:3.9-eclipse-temurin-17",
-        install_command=None,
-        test_command=(
-            "mvn test -B -Djava.io.tmpdir=/workspace 2>&1"
-            "; find target/surefire-reports -name '*.xml' -exec cat {} \\; 2>/dev/null"
-        ),
+]
+
+_NODE_PROFILES: list[SandboxProfile] = [
+    SandboxProfile(
+        language="javascript",
+        image="node:18-slim",
+        install_command="npm ci --ignore-scripts",
+        test_command="npx jest --verbose",
         working_dir="/workspace",
+        runtime_version=18,
     ),
-    "javascript": SandboxProfile(
+    SandboxProfile(
         language="javascript",
         image="node:20-slim",
         install_command="npm ci --ignore-scripts",
         test_command="npx jest --verbose",
         working_dir="/workspace",
+        runtime_version=20,
     ),
-    "typescript": SandboxProfile(
-        language="typescript",
-        image="node:20-slim",
+    SandboxProfile(
+        language="javascript",
+        image="node:22-slim",
         install_command="npm ci --ignore-scripts",
         test_command="npx jest --verbose",
         working_dir="/workspace",
+        runtime_version=22,
     ),
-    "cpp": SandboxProfile(
-        language="cpp",
-        image="ubuntu:22.04",
-        install_command="apt-get update -qq && apt-get install -y -qq cmake g++ libgtest-dev 2>/dev/null",
-        test_command=(
-            "mkdir -p build"
-            " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 2>&1"
-            " && cmake --build build --parallel 2>&1"
-            " && cd build && ctest --output-on-failure 2>&1"
-        ),
-        working_dir="/workspace",
+]
+
+_CPP_PROFILE = SandboxProfile(
+    language="cpp",
+    image="ubuntu:22.04",
+    install_command="apt-get update -qq && apt-get install -y -qq cmake g++ libgtest-dev 2>/dev/null",
+    test_command=(
+        "mkdir -p build"
+        " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 2>&1"
+        " && cmake --build build --parallel 2>&1"
+        " && cd build && ctest --output-on-failure 2>&1"
     ),
+    working_dir="/workspace",
+    runtime_version=None,
+)
+
+# Per-language profile lists (ordered ascending by runtime_version).
+_PROFILES_BY_LANGUAGE: dict[str, list[SandboxProfile]] = {
+    "java": _JAVA_PROFILES,
+    "python": _PYTHON_PROFILES,
+    "javascript": _NODE_PROFILES,
+    "typescript": _NODE_PROFILES,
 }
 
+# Default profile per language (highest version / most capable).
+_DEFAULTS: dict[str, SandboxProfile] = {
+    "java": _JAVA_PROFILES[-1],
+    "python": _PYTHON_PROFILES[-1],
+    "javascript": _NODE_PROFILES[1],   # node:20 is current LTS default
+    "typescript": _NODE_PROFILES[1],
+    "cpp": _CPP_PROFILE,
+}
+
+# Flat dict kept for backward-compat callers (linter path, tests, etc.)
+SANDBOX_PROFILES: dict[str, SandboxProfile] = {k: v for k, v in _DEFAULTS.items()}
 DEFAULT_PROFILE = SANDBOX_PROFILES["python"]
 
 
-def get_sandbox_profile(language: str) -> SandboxProfile:
-    """Return the sandbox profile for *language*, falling back to DEFAULT_PROFILE."""
-    return SANDBOX_PROFILES.get((language or "").lower(), DEFAULT_PROFILE)
+def get_sandbox_profile(
+    language: str,
+    required_version: int | None = None,
+) -> tuple[SandboxProfile, bool]:
+    """Return ``(profile, version_compatible)`` for *language*.
 
+    *required_version* uses the same encoding as ``SandboxProfile.runtime_version``:
+    Java/Node = major int, Python = major*100 + minor.
 
-@dataclass(frozen=True)
-class LintProfile:
-    """Language-specific linter configuration for static analysis in containers."""
+    Selects the lowest available version that satisfies ``>= required_version``.
+    If no profile meets the requirement, falls back to the highest available and
+    returns ``version_compatible=False``.
 
-    language: str
-    image: str          # e.g. maple-python-lint:3.12
-    command: list[str]  # command to run inside container
+    When *required_version* is None, returns the language default with
+    ``version_compatible=True``.
+    """
+    lang = (language or "").lower()
+    profiles = _PROFILES_BY_LANGUAGE.get(lang)
 
+    if not profiles:
+        default = _DEFAULTS.get(lang, DEFAULT_PROFILE)
+        return default, True
 
-LINT_PROFILES: dict[str, LintProfile] = {
-    "python": LintProfile(
-        language="python",
-        image="maple-python-lint:3.12",
-        command=["pylint", "--output-format=json", "--recursive=y", "."],
-    ),
-    "javascript": LintProfile(
-        language="javascript",
-        image="maple-node-lint:20",
-        command=["eslint", "--format=json", "."],
-    ),
-    "typescript": LintProfile(
-        language="typescript",
-        image="maple-node-lint:20",
-        command=["eslint", "--format=json", "."],
-    ),
-}
+    if required_version is None:
+        return _DEFAULTS[lang], True
 
+    for profile in profiles:  # ascending order
+        if profile.runtime_version is not None and profile.runtime_version >= required_version:
+            return profile, True
 
-def get_lint_profile(language: str) -> LintProfile | None:
-    """Return the lint profile for *language*, or None if unsupported."""
-    return LINT_PROFILES.get((language or "").lower())
+    # No profile satisfies the requirement — use highest available.
+    return profiles[-1], False

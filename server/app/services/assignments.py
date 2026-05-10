@@ -78,6 +78,7 @@ async def create_assignment(
     rubric_id: uuid.UUID | None = None,
     enable_lint_review: bool = False,
     language_override: str | None = None,
+    test_discovery_mode: str = "instructor_suite",
 ) -> Assignment:
     assignment = Assignment(
         id=uuid.uuid4(),
@@ -87,6 +88,7 @@ async def create_assignment(
         rubric_id=rubric_id,
         enable_lint_review=enable_lint_review,
         language_override=language_override,
+        test_discovery_mode=test_discovery_mode,
     )
     db.add(assignment)
     await db.commit()
