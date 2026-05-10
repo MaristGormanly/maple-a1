@@ -27,7 +27,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-from typing import Any, Awaitable, Callable, Union
+from typing import Any, Awaitable, Callable, Optional, Union
 
 from jsonschema import Draft202012Validator, ValidationError
 
@@ -67,7 +67,9 @@ class EvaluationFailedError(Exception):
 
 
 def _parse_and_validate(
-    raw_json: str, validator: Draft202012Validator
+    raw_json: str,
+    validator: Draft202012Validator,
+    sanitize_fn: Optional[Callable[[dict], dict]] = None,
 ) -> tuple[dict | None, list[str]]:
     """Parse ``raw_json`` and validate against ``validator``.
 
@@ -78,6 +80,9 @@ def _parse_and_validate(
         instance = json.loads(raw_json)
     except json.JSONDecodeError as exc:
         return None, [f"JSON parse error: {exc.msg} (line {exc.lineno}, col {exc.colno})"]
+
+    if sanitize_fn is not None:
+        instance = sanitize_fn(instance)
 
     errors = sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path))
     if errors:
@@ -130,6 +135,7 @@ async def validate_and_repair(
     schema: dict,
     llm_complete_fn: LLMCompleteFn,
     repair_prompt: str,
+    sanitize_fn: Optional[Callable[[dict], dict]] = None,
 ) -> dict[str, Any]:
     """Validate ``raw_json`` against ``schema`` with one repair retry.
 
@@ -153,19 +159,20 @@ async def validate_and_repair(
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)
 
-    instance, first_errors = _parse_and_validate(raw_json, validator)
+    instance, first_errors = _parse_and_validate(raw_json, validator, sanitize_fn)
     if instance is not None:
         return instance
 
     logger.warning(
-        "validate_and_repair: initial output invalid (%d error(s)); attempting one repair retry",
+        "validate_and_repair: initial output invalid (%d error(s)); attempting one repair retry — errors=%s",
         len(first_errors),
+        first_errors,
     )
 
     composed_prompt = _build_repair_prompt(repair_prompt, raw_json, first_errors)
     repair_output = await _call_llm(llm_complete_fn, composed_prompt)
 
-    repaired_instance, repair_errors = _parse_and_validate(repair_output, validator)
+    repaired_instance, repair_errors = _parse_and_validate(repair_output, validator, sanitize_fn)
     if repaired_instance is not None:
         logger.info("validate_and_repair: repair retry succeeded")
         return repaired_instance

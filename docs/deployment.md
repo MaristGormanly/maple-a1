@@ -352,7 +352,7 @@ The app is configured with a **`.env`** file. Values must **never** be committed
 | `DATABASE_*` / `DATABASE_URL` | PostgreSQL (use a **local** database for development) |
 | `APP_ENV`, `APP_HOST`, `APP_PORT` | Application environment and server binding |
 | `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT signing and token lifetime |
-| `GITHUB_PAT` | GitHub Personal Access Token — minimum scope: **`repo`** (private read). Used for both student-repo cloning and instructor test-suite cloning. Recommended owner: a service account or instructor account with access to private test-suite repos. If the PAT lacks sufficient scope, test-suite clones fail safely (submission → `Failed`, no credential leakage). |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | Fernet key used to encrypt instructor GitHub PATs stored in the database. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Instructor PATs are entered in the app under **Settings → GitHub Connections**, not stored in `.env`. |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | LLM provider keys (placeholders until Milestone 3) |
 | `CORS_ORIGINS` | Allowed CORS origins for the frontend |
 
@@ -702,3 +702,68 @@ docker run --rm maple-node-lint:20 eslint --version
 ### Production deployment
 
 On the Droplet, build and tag these images before starting the service. The linter runner (`services/linter_runner.py`) references images by the tag names above; if the images are absent, `run_linter()` will raise a `DockerRunnerError` at runtime.
+
+---
+
+## App-level rollback
+
+Use this runbook when a deployed commit breaks the pilot (P0 pipeline failure, wrong scores persisted, or a regression that threatens data integrity). This is distinct from the earlier Nginx/TLS rollback — it reverts application code on the Droplet and restarts the service.
+
+### Authorization
+
+Rollback must be **authorized by the Team Lead** before execution, per `docs/milestones/milestone-04-tasks.md` task 4.D.3. Do not roll back unilaterally during the pilot window; record the authorization in the incident log.
+
+### Procedure
+
+SSH to the Droplet as the `maple` user and run:
+
+```bash
+# 1. Identify the bad commit
+cd /opt/maple-a1
+git log --oneline -10
+
+# 2. Revert (creates a new commit that undoes the bad one)
+git revert --no-edit <bad-commit-sha>
+
+# 3. If there are multiple bad commits in a row, revert the range
+# git revert --no-edit <older-sha>..<newer-sha>
+
+# 4. Push if the deployment pulls from a remote branch
+git push origin main
+
+# 5. Restart the service
+sudo systemctl restart maple-a1
+```
+
+### Verification
+
+Confirm the service came back healthy before closing the incident:
+
+```bash
+# Service is running
+sudo systemctl status maple-a1 --no-pager
+
+# Recent logs show a clean startup (no tracebacks)
+sudo journalctl -u maple-a1 -n 50 --no-pager
+
+# Health endpoint returns 200 over HTTPS
+curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
+  https://api.maple-a1.com/api/v1/code-eval/health
+
+# Smoke-test one known-good submission end-to-end (optional, recommended)
+bash eval/scripts/smoke_test.sh
+```
+
+If the service fails to start or the health check does not return 200, escalate to the Team Lead immediately and revert the revert (`git revert <revert-sha>`) to return to the prior state.
+
+### Incident log
+
+Record every rollback in `eval/results/incident-log.md` with:
+- Date/time (UTC)
+- Authorizing Team Lead
+- Commit SHA that was reverted
+- Symptom that triggered the rollback
+- Verification outcome
+- Follow-up ticket for the root-cause fix
+
+This log supports the Milestone 4 retrospective (4.E.4).

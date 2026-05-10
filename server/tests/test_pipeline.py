@@ -119,6 +119,10 @@ class PipelineTests(unittest.TestCase):
                     "app.services.pipeline.detect_language_version",
                     return_value=FAKE_LANGUAGE,
                 ),
+                patch(
+                    "app.services.pipeline._is_llm_ready",
+                    return_value=False,
+                ),
             ):
                 with tempfile.TemporaryDirectory() as tmp:
                     student = Path(tmp) / "student"
@@ -207,6 +211,10 @@ class PipelineTests(unittest.TestCase):
                 patch(
                     "app.services.pipeline.detect_language_version",
                     return_value=FAKE_LANGUAGE,
+                ),
+                patch(
+                    "app.services.pipeline._is_llm_ready",
+                    return_value=False,
                 ),
             ):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -403,6 +411,10 @@ class PipelineTests(unittest.TestCase):
                 patch(
                     "app.services.pipeline.detect_language_version",
                     return_value=FAKE_LANGUAGE,
+                ),
+                patch(
+                    "app.services.pipeline._is_llm_ready",
+                    return_value=False,
                 ),
             ):
                 with tempfile.TemporaryDirectory() as tmp:
@@ -630,7 +642,7 @@ class M3EvaluatingPhaseTests(unittest.TestCase):
 
             self.assertEqual(
                 status_calls,
-                ["Testing", "Completed", "Evaluating", "Completed"],
+                ["Testing", "Evaluating", "Completed"],
             )
             p1_mock.assert_awaited_once()
             p2_mock.assert_awaited_once()
@@ -743,10 +755,12 @@ class M3EvaluatingPhaseTests(unittest.TestCase):
                         "github-pat",
                     )
 
-            # M2 path completes, then Evaluating, then EVALUATION_FAILED.
+            # M2 deterministic phase persists, then Evaluating, then
+            # EVALUATION_FAILED — no transient ``Completed`` to avoid the
+            # frontend-polling race fixed in pipeline.run_pipeline.
             self.assertEqual(
                 status_calls,
-                ["Testing", "Completed", "Evaluating", "EVALUATION_FAILED"],
+                ["Testing", "Evaluating", "EVALUATION_FAILED"],
             )
             self.assertNotIn("Failed", status_calls)
             p3_mock.assert_not_awaited()
@@ -810,7 +824,7 @@ class M3EvaluatingPhaseTests(unittest.TestCase):
 
             self.assertEqual(
                 status_calls,
-                ["Testing", "Completed", "Evaluating", "Awaiting Review"],
+                ["Testing", "Evaluating", "Awaiting Review"],
             )
             persisted_envelope = update_eval_mock.await_args.kwargs[
                 "ai_feedback_json"
@@ -951,7 +965,7 @@ class M3EvaluatingPhaseTests(unittest.TestCase):
 
             self.assertEqual(
                 status_calls,
-                ["Testing", "Completed", "Evaluating", "Failed"],
+                ["Testing", "Evaluating", "Failed"],
             )
 
         asyncio.run(_run())

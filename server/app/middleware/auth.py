@@ -79,7 +79,7 @@ def require_role(required_role: str) -> Callable:
     """
     async def role_checker(current_user: dict = Depends(get_current_user)):
         # Check if the 'role' claim in the decoded JWT payload matches the required role
-        if current_user.get("role") != required_role:
+        if str(current_user.get("role", "")).strip().lower() != required_role.strip().lower():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Operation requires {required_role} role"

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from server.app.models.database import Base
+from .database import Base
 
 
 class Submission(Base):
@@ -19,6 +19,7 @@ class Submission(Base):
     )
     github_repo_url: Mapped[str] = mapped_column(String, nullable=False)
     commit_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    student_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(String, default="Pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -27,5 +28,6 @@ class Submission(Base):
     assignment = relationship("Assignment", back_populates="submissions")
     student = relationship("User", back_populates="submissions")
     evaluation_result = relationship(
-        "EvaluationResult", back_populates="submission", uselist=False
+        "EvaluationResult", back_populates="submission", uselist=False,
+        cascade="all, delete-orphan", passive_deletes=True,
     )

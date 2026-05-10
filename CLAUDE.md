@@ -11,7 +11,7 @@ MAPLE A1 is a code submission evaluator: students submit GitHub repo URLs, the b
 ### Backend (FastAPI — run from `server/`)
 ```bash
 pip install -r requirements.txt
-uvicorn server.app.main:app --reload        # Dev server on :8000
+uvicorn server.app.main:app --reload --reload-dir server  # Dev server on :8000
 pytest tests/                               # All tests
 pytest tests/test_cache.py                  # Single test file
 ```

@@ -1,0 +1,215 @@
+<div class="topbar">
+  <div class="crumbs">
+    <strong>Settings</strong>
+  </div>
+</div>
+
+<div class="page page--wide">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Settings</h1>
+      <div class="page-header__sub">
+        Configure instructor-owned services used by the evaluation pipeline.
+      </div>
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+  <div style="margin-bottom:20px">
+    <div class="banner banner--error" role="alert">
+      <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn" /></svg></span>
+      <div class="banner__copy">
+        <div class="banner__title">Settings error</div>
+        <div class="banner__body">{{errorMessage()}}</div>
+      </div>
+      <button class="banner__close" (click)="errorMessage.set(null)" aria-label="Dismiss">
+        <svg width="14" height="14"><use href="#icon-x" /></svg>
+      </button>
+    </div>
+  </div>
+  }
+
+  @if (successMessage()) {
+  <div style="margin-bottom:20px">
+    <div class="banner banner--info" role="status">
+      <span class="banner__icon"><svg width="16" height="16"><use href="#icon-check" /></svg></span>
+      <div class="banner__copy">
+        <div class="banner__title">{{successMessage()}}</div>
+        <div class="banner__body">The token itself is encrypted server-side and is never displayed here.</div>
+      </div>
+      <button class="banner__close" (click)="successMessage.set(null)" aria-label="Dismiss">
+        <svg width="14" height="14"><use href="#icon-x" /></svg>
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="folder-tabs" role="tablist" aria-label="Settings sections">
+    <button
+      type="button"
+      class="folder-tab"
+      [class.folder-tab--active]="activeTab() === 'github'"
+      (click)="selectTab('github')"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'github'"
+    >
+      <svg width="16" height="16"><use href="#icon-github" /></svg>
+      GitHub Connections
+    </button>
+  </div>
+
+  <section class="folder-panel" role="tabpanel">
+    @if (loading()) {
+    <div class="empty">
+      <span class="spinner"></span>
+      <p>Loading settings.</p>
+    </div>
+    } @else {
+    <div class="settings-grid">
+      <div>
+        <div class="section-title">
+          <svg width="20" height="20"><use href="#icon-github" /></svg>
+          GitHub Connections
+        </div>
+
+        <div class="settings-status">
+          @if (githubSettings()?.connected) {
+          <span class="badge badge--green"><span class="badge__dot"></span>Connected</span>
+          } @else {
+          <span class="badge badge--neutral"><span class="badge__dot"></span>Not connected</span>
+          }
+
+          @if (githubSettings()?.github_username) {
+          <span class="settings-status__meta">&#64;{{githubSettings()?.github_username}}</span>
+          }
+
+          @if (githubSettings()?.last_updated_at) {
+          <span class="settings-status__meta">
+            Updated {{githubSettings()?.last_updated_at | date:'medium'}}
+          </span>
+          }
+        </div>
+
+        <form
+          [formGroup]="form"
+          (ngSubmit)="saveGitHubSettings()"
+          class="settings-form"
+          autocomplete="off"
+        >
+          <div class="field">
+            <label class="field__label" for="githubUsername">GitHub username</label>
+            <input
+              id="githubUsername"
+              class="input"
+              [class.input--error]="showUsernameErr"
+              placeholder="instructor-github-username"
+              formControlName="githubUsername"
+              autocomplete="off"
+              [readOnly]="githubSettings()?.connected"
+            />
+            @if (showUsernameErr) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Keep the username under 120 characters.
+            </span>
+            } @else if (githubSettings()?.connected) {
+            <span class="field__hint">Saved GitHub account for this connection.</span>
+            } @else {
+            <span class="field__hint">Used to verify the token belongs to the instructor account.</span>
+            }
+          </div>
+
+          @if (githubSettings()?.connected) {
+          <div class="settings-note settings-note--compact">
+            <div class="settings-note__icon">
+              <svg width="20" height="20"><use href="#icon-shield" /></svg>
+            </div>
+            <div>
+              <div class="settings-note__title">Saved token</div>
+              <p>
+                Personal access token saved and encrypted in the backend. The token is never
+                displayed here.
+              </p>
+            </div>
+          </div>
+          } @else {
+          <div class="field">
+            <label class="field__label" for="personalAccessToken">
+              Personal access token <span class="field__req">*</span>
+            </label>
+            <div class="input-wrap">
+              <span class="input-wrap__adorn">
+                <svg width="14" height="14"><use href="#icon-shield" /></svg>
+              </span>
+              <input
+                id="personalAccessToken"
+                class="input input--mono"
+                [class.input--error]="showTokenErr"
+                type="password"
+                placeholder="github_pat_..."
+                formControlName="personalAccessToken"
+                autocomplete="new-password"
+              />
+            </div>
+            @if (showTokenErr) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Enter the token GitHub showed when it was created.
+            </span>
+            } @else {
+            <span class="field__hint">
+              Saved tokens are not returned by the API. Paste a new token to rotate access.
+            </span>
+            }
+          </div>
+          }
+
+          <div class="settings-actions">
+            @if (githubSettings()?.connected) {
+            <button
+              class="btn btn--outline-danger"
+              type="button"
+              (click)="openDeleteDialog()"
+              [disabled]="saving() || clearing()"
+            >
+              Delete key
+            </button>
+            } @else {
+            <button class="btn btn--primary" type="submit" [disabled]="saving() || clearing()">
+              @if (saving()) {
+              <span class="spinner"></span>
+              Saving
+              } @else {
+              Save connection
+              }
+            </button>
+            }
+          </div>
+        </form>
+      </div>
+
+      <aside class="settings-note">
+        <div class="settings-note__icon">
+          <svg width="20" height="20"><use href="#icon-shield" /></svg>
+        </div>
+        <div>
+          <div class="settings-note__title">Token handling</div>
+          <p>
+            A1 validates the token with GitHub, encrypts it at rest, and uses it only for repository
+            access during evaluation. The stored PAT is never rendered back into the browser.
+          </p>
+        </div>
+      </aside>
+    </div>
+    }
+  </section>
+</div>
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog()"
+  title="Delete GitHub key"
+  message="This removes the encrypted GitHub token from A1. You will need to save a new token before evaluations can access private repositories."
+  confirmLabel="Delete key"
+  [loading]="clearing()"
+  (confirmed)="clearGitHubSettings()"
+  (cancelled)="cancelDeleteDialog()" />

@@ -96,7 +96,7 @@ _VALID_PASS3: dict = {
         {
             "name": "Correctness",
             "score": 87.5,
-            "level": "Proficient",
+            "level": "STRONG",
             "justification": "12/14 unit tests pass; remaining failures are edge cases.",
             "confidence": 0.88,
             "recommendations": [_VALID_RECOMMENDATION],
@@ -105,7 +105,7 @@ _VALID_PASS3: dict = {
         {
             "name": "Style",
             "score": 70,
-            "level": "Developing",
+            "level": "ACCEPTABLE",
             "justification": "Several PEP8 line-length violations remain.",
             "confidence": 0.75,
         },
@@ -208,6 +208,12 @@ class Pass3SchemaTests(unittest.TestCase):
     def test_unknown_level_rejected(self) -> None:
         bad = copy.deepcopy(_VALID_PASS3)
         bad["criteria_scores"][0]["level"] = "Stellar"
+        with self.assertRaises(ValidationError):
+            self.validator.validate(bad)
+
+    def test_legacy_level_rejected(self) -> None:
+        bad = copy.deepcopy(_VALID_PASS3)
+        bad["criteria_scores"][0]["level"] = "Proficient"
         with self.assertRaises(ValidationError):
             self.validator.validate(bad)
 

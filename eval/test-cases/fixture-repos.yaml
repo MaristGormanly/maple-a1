@@ -1,0 +1,39 @@
+# Smoke-test fixture repositories (M4 task 4.A.8).
+#
+# Two repositories the pilot operator submits against the production
+# stack to verify the full ingest -> sandbox -> AI -> persist pipeline
+# is healthy. Replace placeholder URLs and expected score ranges
+# before the first production smoke run.
+
+fixtures:
+  known_good:
+    description: >
+      Reference repository where every test passes and style checks
+      are clean. Pipeline must complete with deterministic_score in
+      the expected range and no error flags.
+    github_url: https://github.com/maple-a1-fixtures/known-good-python  # PLACEHOLDER
+    language: python
+    expected_status: Completed
+    expected_deterministic_score:
+      min: 95
+      max: 100
+    expected_flags_empty: true
+
+  known_failing:
+    description: >
+      Reference repository with deliberately failing tests and
+      style violations. Pipeline must complete (not crash) with a
+      reduced deterministic_score and at least one entry in flags.
+    github_url: https://github.com/maple-a1-fixtures/known-failing-python  # PLACEHOLDER
+    language: python
+    expected_status: Completed
+    expected_deterministic_score:
+      min: 0
+      max: 60
+    expected_flags_non_empty: true
+
+# Operational notes:
+# - Both repos must list the instructor PAT account as a collaborator
+#   (read access). See docs/instructor-maple-a1-evaluation-instructions.md.
+# - Update github_url placeholders to real URLs before first
+#   production smoke run; re-commit this file with the actual values.

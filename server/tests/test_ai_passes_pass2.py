@@ -372,6 +372,27 @@ class Pass2RetrieverTests(unittest.TestCase):
         mock_retriever.assert_awaited_once()
         self.assertEqual(result["pass2"]["retrieval_status"], "ok")
 
+    def test_retriever_exception_marks_unavailable_and_still_runs_pass2(self) -> None:
+        mock_complete = AsyncMock(return_value=_ok_response(json.dumps(_VALID_PASS2_OUTPUT)))
+        mock_retriever = MagicMock(side_effect=RuntimeError("pgvector unavailable"))
+
+        result = _run(
+            run_pass2(
+                pass1_result=_PASS1_REASONING,
+                code_chunks=_CODE_CHUNKS,
+                rubric_content="Style.",
+                enable_lint_review=True,
+                linter_violations=_LINTER_VIOLATIONS,
+                language="python",
+                llm_complete=mock_complete,
+                style_retriever=mock_retriever,
+            )
+        )
+
+        self.assertEqual(result["pass2"]["pass"], "pass2")
+        self.assertEqual(result["pass2"]["retrieval_status"], "unavailable")
+        mock_complete.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # Repair / failure

@@ -1,9 +1,10 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.assignment import Assignment
+from ..models.submission import Submission
 
 
 def parse_assignment_id(raw: str) -> uuid.UUID:
@@ -43,6 +44,31 @@ async def validate_assignment_exists(
     return assignment
 
 
+async def list_assignments(
+    db: AsyncSession,
+    *,
+    instructor_id: uuid.UUID,
+    role: str,
+) -> list[tuple]:
+    """Return all assignments visible to the caller, with submission counts.
+
+    Instructors see only their own assignments. Admins see all.
+    Each element is a (Assignment, int) tuple where the int is the
+    count of submissions for that assignment.
+    """
+    count_sub = (
+        select(func.count())
+        .where(Submission.assignment_id == Assignment.id)
+        .correlate(Assignment)
+        .scalar_subquery()
+    )
+    q = select(Assignment, count_sub.label("submission_count")).order_by(Assignment.title)
+    if role.strip().lower() not in ("admin",):
+        q = q.where(Assignment.instructor_id == instructor_id)
+    result = await db.execute(q)
+    return result.all()
+
+
 async def create_assignment(
     db: AsyncSession,
     *,
@@ -52,6 +78,7 @@ async def create_assignment(
     rubric_id: uuid.UUID | None = None,
     enable_lint_review: bool = False,
     language_override: str | None = None,
+    test_discovery_mode: str = "instructor_suite",
 ) -> Assignment:
     assignment = Assignment(
         id=uuid.uuid4(),
@@ -61,8 +88,21 @@ async def create_assignment(
         rubric_id=rubric_id,
         enable_lint_review=enable_lint_review,
         language_override=language_override,
+        test_discovery_mode=test_discovery_mode,
     )
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
     return assignment
+
+
+async def delete_assignment(
+    db: AsyncSession,
+    assignment_id: uuid.UUID,
+) -> bool:
+    assignment = await get_assignment_by_id(db, assignment_id)
+    if assignment is None:
+        return False
+    await db.delete(assignment)
+    await db.commit()
+    return True

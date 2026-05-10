@@ -15,7 +15,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class RegisterRequest(BaseModel):
     email: str
     password: str
-    role: str = "Student"
 
 
 class LoginRequest(BaseModel):
@@ -29,7 +28,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     user = User(
         email=request.email,
         password_hash=hashed,
-        role=request.role,
+        role="Student",
     )
 
     db.add(user)

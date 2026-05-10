@@ -1,0 +1,224 @@
+<div class="topbar">
+  <div class="crumbs">
+    <span>Submissions</span>
+    <span class="crumbs__sep">/</span>
+    <strong>All submissions</strong>
+  </div>
+  <div class="topbar__spacer"></div>
+</div>
+
+<div class="page page--wide">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Submissions</h1>
+    </div>
+    <div class="seg">
+      <button class="seg__item" [class.seg__item--active]="view() === 'table'" (click)="view.set('table')">
+        <svg width="14" height="14">
+          <use href="#icon-list" />
+        </svg>
+        Table
+      </button>
+      <button class="seg__item" [class.seg__item--active]="view() === 'cards'" (click)="view.set('cards')">
+        <svg width="14" height="14">
+          <use href="#icon-layout-grid" />
+        </svg>
+        Cards
+      </button>
+    </div>
+  </div>
+
+  @if (loadError()) {
+  <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+    <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
+    <div class="banner__copy">
+      <div class="banner__title">Could not load submissions</div>
+      <div class="banner__body">{{loadError()}}</div>
+    </div>
+  </div>
+  }
+
+  <!-- Filter bar -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+    <div class="input-wrap" style="flex:1;max-width:360px">
+      <span class="input-wrap__adorn">
+        <svg width="14" height="14">
+          <use href="#icon-search" />
+        </svg>
+      </span>
+      <input class="input" placeholder="Filter by student, repo, or ID…" [value]="searchQuery()"
+        (input)="onSearch($event)" />
+    </div>
+    <div class="seg seg--accent">
+      <button class="seg__item" [class.seg__item--active]="filter() === 'all'" (click)="filter.set('all')">All</button>
+      <button class="seg__item" [class.seg__item--active]="filter() === 'Awaiting Review'"
+        (click)="filter.set('Awaiting Review')">Needs review</button>
+      <button class="seg__item" [class.seg__item--active]="filter() === 'Completed'"
+        (click)="filter.set('Completed')">Completed</button>
+      <button class="seg__item" [class.seg__item--active]="filter() === 'Error'" (click)="filter.set('Error')">Error</button>
+    </div>
+  </div>
+
+  @if (loading()) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">Loading submissions…</div>
+    </div>
+  </div>
+  }
+
+  <!-- Empty state -->
+  @if (!loading() && filtered().length === 0) {
+  <div class="card">
+    <div class="empty">
+      <div class="empty__icon">
+        <svg width="24" height="24">
+          <use href="#icon-clipboard" />
+        </svg>
+      </div>
+      <h3>No submissions yet</h3>
+      <p>
+        Submitted work will appear here once students submit their assignments.
+        @if (latestAssignmentId) {
+        Latest assignment: <span class="mono">{{latestAssignmentId.slice(0, 8)}}…</span>
+        }
+      </p>
+      <button class="btn btn--primary btn--sm" routerLink="/submit">
+        <svg width="13" height="13">
+          <use href="#icon-submit" />
+        </svg>
+        New submission
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table view -->
+  @if (filtered().length > 0 && view() === 'table') {
+  <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Submission</th>
+          <th>Repository</th>
+          @if (filter() === 'all') {
+          <th style="width:150px">Status</th>
+          }
+          <th style="width:90px">Score</th>
+          <th style="width:120px">Submitted</th>
+          <th style="width:180px;text-align:right;padding-right:30px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of filtered(); track r.id) {
+        <tr (click)="viewStatus(r)">
+          <td>
+            <div class="student-cell">
+              <span class="avatar avatar--sm"
+                [style.background]="avatarColor(r.student.tint)">{{r.student.initials}}</span>
+              <div>
+                <div class="student-cell__name">{{r.student.name}}</div>
+                <div class="student-cell__email">{{r.student.email}}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="sid">
+              <span class="mono">{{r.id.slice(0, 8)}}…</span>
+            </span>
+          </td>
+          <td class="mono" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{r.github}}</td>
+          @if (filter() === 'all') {
+          <td>
+            <span class="badge" [class.badge--green]="badgeTone(displayStatus(r.status)) === 'green'"
+              [class.badge--amber]="badgeTone(displayStatus(r.status)) === 'amber'"
+              [class.badge--red]="badgeTone(displayStatus(r.status)) === 'red'"
+              [class.badge--blue]="badgeTone(displayStatus(r.status)) === 'blue'"
+              [class.badge--neutral]="badgeTone(displayStatus(r.status)) === 'neutral'">
+              <span class="badge__dot"></span>{{displayStatus(r.status)}}
+            </span>
+          </td>
+          }
+          <td class="table__score">
+            @if (r.score !== null) { {{r.score}} } @else { <span class="muted">—</span> }
+          </td>
+          <td class="mono" style="color:var(--ink-3);font-size:12px">{{r.submitted}}</td>
+          <td>
+            <div class="table__actions" (click)="$event.stopPropagation()">
+              <button class="btn btn--ghost btn--sm" (click)="viewStatus(r)">
+                View <svg width="12" height="12">
+                  <use href="#icon-chevron" />
+                </svg>
+              </button>
+              <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(r.id, $event)">
+                Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  }
+
+  <!-- Card view -->
+  @if (filtered().length > 0 && view() === 'cards') {
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px">
+    @for (r of filtered(); track r.id) {
+    <div class="card" style="cursor:pointer" (click)="viewStatus(r)">
+      <div class="card__body" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="avatar" [style.background]="avatarColor(r.student.tint)">{{r.student.initials}}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:var(--ink)">{{r.student.name}}</div>
+            <div class="muted" style="font-size:12px">{{r.student.email}}</div>
+          </div>
+        </div>
+        <div>
+          <span class="badge" [class.badge--green]="badgeTone(displayStatus(r.status)) === 'green'"
+            [class.badge--amber]="badgeTone(displayStatus(r.status)) === 'amber'"
+            [class.badge--red]="badgeTone(displayStatus(r.status)) === 'red'"
+            [class.badge--blue]="badgeTone(displayStatus(r.status)) === 'blue'"
+            [class.badge--neutral]="badgeTone(displayStatus(r.status)) === 'neutral'">
+            <span class="badge__dot"></span>{{displayStatus(r.status)}}
+          </span>
+        </div>
+        <div class="mono"
+          style="font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;gap:6px;align-items:center">
+          <svg width="12" height="12">
+            <use href="#icon-github" />
+          </svg>
+          {{r.github}}
+        </div>
+        <div
+          style="display:flex;align-items:center;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border)">
+          <div class="muted" style="font-size:12px">{{r.submitted}}</div>
+          <div class="table__score" style="font-size:18px">
+            @if (r.score !== null) {
+            {{r.score}}<small style="font-size:11px;color:var(--ink-4)">/100</small>
+            } @else {
+            <span class="muted">—</span>
+            }
+          </div>
+        </div>
+        <div style="padding-top:8px;display:flex;justify-content:flex-end" (click)="$event.stopPropagation()">
+          <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(r.id, $event)">Delete</button>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog()"
+  title="Delete submission?"
+  message="The submission and its evaluation result will be permanently removed."
+  confirmLabel="Delete submission"
+  [loading]="deleteLoading()"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="onDeleteCancelled()" />

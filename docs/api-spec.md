@@ -157,10 +157,11 @@ The `submission_id` in the response is a **UUID backed by the database** (not ep
 | 400 | `VALIDATION_ERROR` | `github_url` is not a valid URL or not a `github.com` URL |
 | 400 | `VALIDATION_ERROR` | `rubric` is empty, not UTF-8, or fails fingerprinting |
 | 400 | `VALIDATION_ERROR` | `assignment_id` is present but not a valid UUID |
+| 400 | `VALIDATION_ERROR` | Instructor GitHub connection has not been configured |
 | 401 | `AUTH_ERROR` | JWT missing, expired, or `sub` claim is not a valid UUID |
-| 401 | `AUTHENTICATION_ERROR` | `GITHUB_PAT` is invalid or expired |
+| 401 | `AUTHENTICATION_ERROR` | Saved GitHub token is invalid or expired |
 | 404 | `NOT_FOUND` | `assignment_id` UUID is valid but no matching assignment exists |
-| 500 | `CONFIGURATION_ERROR` | `GITHUB_PAT` env var is not set |
+| 500 | `CONFIGURATION_ERROR` | `GITHUB_TOKEN_ENCRYPTION_KEY` is missing or cannot decrypt saved token data |
 | 500 | `CACHE_ERROR` | Cache index is corrupt or unwritable |
 | 500 | `PREPROCESSING_ERROR` | Repository cleanup/preprocessing failed |
 | 502 | `CLONE_ERROR` | `git clone` failed |
@@ -339,6 +340,7 @@ Accepts a GitHub repository URL and a rubric file for ingestion and submission c
 
 - Content type: `multipart/form-data`
 - Authentication: Bearer JWT required
+- GitHub access: uses the authenticated instructor's saved token from `Settings → GitHub Connections`
 
 ### Request fields
 
@@ -357,6 +359,40 @@ curl -X POST "http://localhost:8000/api/v1/code-eval/evaluate" \
   -F "assignment_id=11111111-2222-3333-4444-555555555555" \
   -F "rubric=@rubric.json;type=application/json"
 ```
+
+## `GET /api/v1/code-eval/settings/github`
+
+Returns metadata for the authenticated instructor's GitHub connection. The PAT is never returned.
+
+- Authentication: Instructor Bearer JWT required
+
+```json
+{
+  "success": true,
+  "data": {
+    "connected": true,
+    "github_username": "instructor",
+    "last_updated_at": "2026-05-09T12:00:00+00:00"
+  },
+  "error": null,
+  "metadata": { "timestamp": "...", "module": "a1", "version": "1.0.0" }
+}
+```
+
+## `PUT /api/v1/code-eval/settings/github`
+
+Validates and saves the authenticated instructor's GitHub PAT encrypted at rest.
+
+```json
+{
+  "github_username": "instructor",
+  "personal_access_token": "github_pat_..."
+}
+```
+
+## `DELETE /api/v1/code-eval/settings/github`
+
+Clears the authenticated instructor's saved GitHub token and related metadata.
 
 ### Success response
 

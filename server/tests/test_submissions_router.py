@@ -24,10 +24,13 @@ def _submission(*, student_id: uuid.UUID, instructor_id: uuid.UUID):
         commit_hash="abc123",
         status="Pending",
         created_at=datetime.now(timezone.utc),
+        student=None,
+        student_name=None,
         evaluation_result=None,
         assignment=SimpleNamespace(
             id=assignment_id,
             instructor_id=instructor_id,
+            rubric=None,
         ),
     )
 
@@ -197,4 +200,167 @@ class GetSubmissionAuthorizationTests(unittest.IsolatedAsyncioTestCase):
         payload = _payload(response)
         self.assertTrue(payload["success"])
         self.assertEqual(payload["data"]["status"], "Completed")
+
+
+class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCase):
+    """Pin the contract that plural per-criterion ``recommendations`` are flattened.
+
+    Pass 3's :data:`CRITERIA_SCORE_SCHEMA` emits a plural array; the
+    earlier serializer scanned for a singular ``recommendation`` and
+    therefore returned an empty list to the frontend even when the LLM
+    produced valid recommendation objects.
+    """
+
+    @staticmethod
+    def _db_with_submission(submission):
+        db = AsyncMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = submission
+        db.execute.return_value = result
+        return db
+
+    @staticmethod
+    def _rec(file_path: str, line_start: int) -> dict:
+        return {
+            "file_path": file_path,
+            "line_range": {"start": line_start, "end": line_start + 1},
+            "original_snippet": "x = 1",
+            "revised_snippet": "x = 2",
+            "diff": "@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n",
+        }
+
+    async def test_plural_recommendations_are_flattened_for_privileged_viewer(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.status = "Awaiting Review"
+
+        rec_a = self._rec("src/a.py", 10)
+        rec_b = self._rec("src/b.py", 22)
+        rec_c = self._rec("src/c.py", 33)
+
+        submission.evaluation_result = SimpleNamespace(
+            deterministic_score=80.0,
+            review_status="pending",
+            instructor_notes=None,
+            ai_feedback_json={
+                "criteria_scores": [
+                    {
+                        "name": "Correctness",
+                        "score": 80,
+                        "level": "STRONG",
+                        "justification": "ok",
+                        "confidence": 0.9,
+                        "recommendations": [rec_a, rec_b],
+                    },
+                    {
+                        "name": "Style",
+                        "score": 70,
+                        "level": "ACCEPTABLE",
+                        "justification": "naming",
+                        "confidence": 0.7,
+                        "recommendations": [rec_c],
+                    },
+                ],
+                "flags": [],
+                "metadata": {"language": "python"},
+            },
+            metadata_json={
+                "language": {"language": "python"},
+                "test_summary": {"framework": "pytest", "passed": 1, "failed": 0, "errors": 0, "skipped": 0},
+            },
+        )
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(instructor_id), "role": "Instructor"},
+        )
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        recommendations = payload["data"]["evaluation"]["ai_feedback"]["recommendations"]
+        self.assertEqual(len(recommendations), 3)
+        self.assertEqual(
+            [r["file_path"] for r in recommendations],
+            ["src/a.py", "src/b.py", "src/c.py"],
+        )
+
+    async def test_singular_recommendation_field_is_still_supported(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.status = "Completed"
+
+        rec = self._rec("legacy.py", 5)
+
+        submission.evaluation_result = SimpleNamespace(
+            deterministic_score=90.0,
+            review_status="approved",
+            instructor_notes=None,
+            ai_feedback_json={
+                "criteria_scores": [
+                    {
+                        "name": "Correctness",
+                        "score": 90,
+                        "level": "EXEMPLARY",
+                        "justification": "ok",
+                        "confidence": 0.95,
+                        "recommendation": rec,
+                    },
+                ],
+                "flags": [],
+                "metadata": {},
+            },
+            metadata_json=None,
+        )
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+        payload = _payload(response)
+        recommendations = payload["data"]["evaluation"]["ai_feedback"]["recommendations"]
+        self.assertEqual(len(recommendations), 1)
+        self.assertEqual(recommendations[0]["file_path"], "legacy.py")
+
+    async def test_ai_feedback_hidden_from_unprivileged_viewer_pre_approval(self) -> None:
+        owner_id = uuid.uuid4()
+        instructor_id = uuid.uuid4()
+        submission = _submission(student_id=owner_id, instructor_id=instructor_id)
+        submission.status = "Awaiting Review"
+        submission.evaluation_result = SimpleNamespace(
+            deterministic_score=80.0,
+            review_status="pending",
+            instructor_notes=None,
+            ai_feedback_json={
+                "criteria_scores": [
+                    {
+                        "name": "Correctness",
+                        "score": 80,
+                        "level": "STRONG",
+                        "justification": "ok",
+                        "confidence": 0.9,
+                        "recommendations": [self._rec("a.py", 1)],
+                    },
+                ],
+                "flags": [],
+                "metadata": {},
+            },
+            metadata_json=None,
+        )
+
+        db = self._db_with_submission(submission)
+
+        response = await get_submission(
+            str(submission.id),
+            db=db,
+            current_user={"sub": str(owner_id), "role": "Student"},
+        )
+        payload = _payload(response)
+        self.assertIsNone(payload["data"]["evaluation"]["ai_feedback"])
 

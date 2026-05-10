@@ -17,6 +17,7 @@ from sqlalchemy import text
 
 from ..models.database import async_session_maker
 from .embeddings import embed_batch
+from .vector_serialization import to_pgvector_literal
 
 
 @dataclass
@@ -153,7 +154,7 @@ async def ingest_all(db_session) -> int:
                          rule_id, last_fetched, chunk_text, embedding)
                     VALUES
                         (:source_title, :source_url, :language, :style_guide_version,
-                         :rule_id, :last_fetched, :chunk_text, :embedding)
+                         :rule_id, :last_fetched, :chunk_text, CAST(:embedding AS vector))
                 """),
                 {
                     "source_title": doc.source_title,
@@ -163,7 +164,7 @@ async def ingest_all(db_session) -> int:
                     "rule_id": rule_id,
                     "last_fetched": now,
                     "chunk_text": chunk_text,
-                    "embedding": embedding,
+                    "embedding": to_pgvector_literal(embedding),
                 },
             )
             total_upserted += 1

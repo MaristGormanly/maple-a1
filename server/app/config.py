@@ -14,10 +14,10 @@ Significance to maple-a1:
 3. Type Safety: Pydantic ensures that variables like APP_PORT are integers, preventing type errors.
 """
 
-import os
 from pathlib import Path
 from typing import List
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -53,9 +53,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # --- External Services ---
-    # GitHub Personal Access Token, required by Sylvie's ingestion pipeline to clone
-    # private student repositories. Must be present in the environment at startup.
-    GITHUB_PAT: str
+    # Key used to encrypt per-instructor GitHub Personal Access Tokens at rest.
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    GITHUB_TOKEN_ENCRYPTION_KEY: str = ""
     
     # --- Docker Configuration ---
     # The Docker daemon socket URL. Default is the standard Linux UNIX socket.
@@ -91,6 +91,19 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
         return self.CORS_ORIGINS
 
+    @model_validator(mode="after")
+    def _reject_wildcard_cors_in_production(self) -> "Settings":
+        if self.APP_ENV == "production" and "*" in self.cors_origins_list:
+            raise ValueError(
+                "CORS_ORIGINS must not contain '*' when APP_ENV=production "
+                "(M4.A.4 — no wildcard in production)."
+            )
+        if self.APP_ENV == "production" and not self.GITHUB_TOKEN_ENCRYPTION_KEY:
+            raise ValueError(
+                "GITHUB_TOKEN_ENCRYPTION_KEY must be set when APP_ENV=production."
+            )
+        return self
+
     # Pydantic model configuration
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", SERVER_ROOT / ".env"),
@@ -103,10 +116,3 @@ class Settings(BaseSettings):
 # Import this `settings` object in other modules to access configuration values.
 # Example: `from server.app.config import settings; print(settings.DATABASE_URL)`
 settings = Settings()
-
-
-def get_required_github_pat() -> str:
-    github_pat = os.getenv("GITHUB_PAT") or settings.GITHUB_PAT
-    if not github_pat:
-        raise RuntimeError("GITHUB_PAT is not configured. Set it in the environment or in .env.")
-    return github_pat

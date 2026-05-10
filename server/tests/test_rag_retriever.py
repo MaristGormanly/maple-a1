@@ -164,5 +164,26 @@ class TestRetrieveAppliesLanguageFilter(unittest.TestCase):
         self.assertEqual(params_arg.get("lang"), requested_language)
 
 
+class TestRetrievePgvectorBinding(unittest.TestCase):
+    """Raw SQL must cast serialized vectors so asyncpg can bind them."""
+
+    def test_query_vector_is_serialized_and_cast(self):
+        rows: list = []
+        mock_session_maker, mock_session = _make_session_maker(rows)
+
+        async def _run():
+            with patch(_EMBED_PATCH, new=AsyncMock(return_value=[0.1, -0.2, 3.0])):
+                with patch(_SESSION_MAKER_PATCH, mock_session_maker):
+                    return await retrieve_style_chunks("docstring style", "python")
+
+        asyncio.run(_run())
+
+        sql_arg, params_arg = mock_session.execute.call_args[0]
+        sql_text = str(sql_arg)
+        self.assertIn("CAST(:qvec AS vector)", sql_text)
+        self.assertEqual(params_arg["qvec"], "[0.1,-0.2,3.0]")
+        self.assertIsInstance(params_arg["qvec"], str)
+
+
 if __name__ == "__main__":
     unittest.main()

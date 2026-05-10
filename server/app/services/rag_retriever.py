@@ -16,6 +16,7 @@ from sqlalchemy import text
 from ..models.database import async_session_maker
 from ..services.embeddings import embed_text
 from ..services.llm import redact
+from ..services.vector_serialization import to_pgvector_literal
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +39,16 @@ async def retrieve_style_chunks(
     top_k: int = 5,
     threshold: float = 0.75,
 ) -> list[StyleChunkHit]:
-    qvec = await embed_text(redact(query_text))
+    qvec = to_pgvector_literal(await embed_text(redact(query_text)))
 
     async with async_session_maker() as session:
         result = await session.execute(
             text("""
                 SELECT id, source_title, source_url, style_guide_version, rule_id, chunk_text,
-                       1 - (embedding <=> :qvec) AS cosine_sim
+                       1 - (embedding <=> CAST(:qvec AS vector)) AS cosine_sim
                 FROM style_guide_chunks
                 WHERE language = :lang AND embedding IS NOT NULL
-                ORDER BY embedding <=> :qvec
+                ORDER BY embedding <=> CAST(:qvec AS vector)
                 LIMIT :k
             """),
             {"qvec": qvec, "lang": language, "k": top_k},

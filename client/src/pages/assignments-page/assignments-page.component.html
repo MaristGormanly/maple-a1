@@ -1,0 +1,136 @@
+<div class="topbar">
+  <div class="crumbs">
+    <span>Assignments</span>
+    <span class="crumbs__sep">/</span>
+    <strong>All assignments</strong>
+  </div>
+  <div class="topbar__spacer"></div>
+</div>
+
+<div class="page page--wide">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Assignments</h1>
+    </div>
+    <a class="btn btn--primary btn--sm" routerLink="/assignment">
+      <svg width="13" height="13"><use href="#icon-plus" /></svg>
+      New assignment
+    </a>
+  </div>
+
+  @if (loadError()) {
+  <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+    <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
+    <div class="banner__copy">
+      <div class="banner__title">Could not load assignments</div>
+      <div class="banner__body">{{loadError()}}</div>
+    </div>
+  </div>
+  }
+
+  <!-- Search bar -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+    <div class="input-wrap" style="flex:1;max-width:360px">
+      <span class="input-wrap__adorn">
+        <svg width="14" height="14"><use href="#icon-search" /></svg>
+      </span>
+      <input class="input" placeholder="Filter by title or language…" [value]="searchQuery()"
+        (input)="onSearch($event)" />
+    </div>
+  </div>
+
+  @if (loading()) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">Loading assignments…</div>
+    </div>
+  </div>
+  }
+
+  @if (!loading() && filtered().length === 0 && !loadError()) {
+  <div class="card">
+    <div class="empty">
+      <div class="empty__icon">
+        <svg width="24" height="24"><use href="#icon-clipboard" /></svg>
+      </div>
+      <h3>No assignments yet</h3>
+      <p>Create your first assignment to start evaluating student submissions.</p>
+      <a class="btn btn--primary btn--sm" routerLink="/assignment">
+        <svg width="13" height="13"><use href="#icon-plus" /></svg>
+        New assignment
+      </a>
+    </div>
+  </div>
+  }
+
+  @if (filtered().length > 0) {
+  <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Test suite</th>
+          <th style="width:130px">Language</th>
+          <th style="width:120px">Lint review</th>
+          <th style="width:110px;text-align:center">Submissions</th>
+          <th style="width:140px;text-align:right;padding-right:30px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (a of filtered(); track a.assignment_id) {
+        <tr (click)="viewAssignment(a)" style="cursor:pointer">
+          <td style="font-weight:600;color:var(--ink)">{{a.title}}</td>
+          <td class="mono"
+            style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-3);font-size:12px">
+            {{a.test_suite_repo_url ?? '—'}}
+          </td>
+          <td>
+            @if (a.language_override) {
+            <span class="badge badge--neutral">{{a.language_override}}</span>
+            } @else {
+            <span class="muted" style="font-size:13px">Auto-detect</span>
+            }
+          </td>
+          <td>
+            @if (a.enable_lint_review) {
+            <span class="badge badge--green"><span class="badge__dot"></span>Enabled</span>
+            } @else {
+            <span class="badge badge--neutral">Off</span>
+            }
+          </td>
+          <td style="text-align:center">
+            <span class="table__score" style="font-size:16px">{{a.submission_count}}</span>
+          </td>
+          <td>
+            <div class="table__actions" (click)="$event.stopPropagation()">
+              <button class="btn btn--ghost btn--sm" (click)="viewAssignment(a)">
+                View <svg width="12" height="12"><use href="#icon-chevron" /></svg>
+              </button>
+              <button class="btn btn--outline-danger btn--sm" (click)="openDeleteDialog(a.assignment_id, $event)">
+                Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  }
+</div>
+
+@if (deleteError()) {
+<div class="banner banner--error" role="alert" style="margin-top:12px">
+  <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert" /></svg></span>
+  <div class="banner__copy"><div class="banner__body">{{deleteError()}}</div></div>
+</div>
+}
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog()"
+  title="Delete assignment?"
+  message="All submissions and evaluation results for this assignment will be permanently deleted."
+  confirmLabel="Delete assignment"
+  [loading]="deleteLoading()"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="onDeleteCancelled()" />

@@ -6,8 +6,9 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.app.models import Rubric, get_db
-from server.app.utils.responses import success_response, error_response
+from ..middleware.auth import require_role
+from ..models import Rubric, get_db
+from ..utils.responses import success_response, error_response
 
 router = APIRouter(prefix="/rubrics", tags=["rubrics"])
 
@@ -46,7 +47,11 @@ class RubricCreateRequest(BaseModel):
 
 
 @router.post("")
-async def create_rubric(request: RubricCreateRequest, db: AsyncSession = Depends(get_db)):
+async def create_rubric(
+    request: RubricCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_role("Instructor")),
+):
     criteria_total = sum(c.max_points for c in request.criteria)
     if criteria_total != request.total_points:
         return error_response(

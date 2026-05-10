@@ -1,0 +1,174 @@
+<div class="topbar">
+  <div class="crumbs">
+    <span>Assignments</span>
+    <span class="crumbs__sep">/</span>
+    <strong>New</strong>
+  </div>
+</div>
+
+<div class="page" style="max-width:900px">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>New assignment</h1>
+      <div class="page-header__sub">
+        Defines the test suite the sandbox will run, plus language and lint settings.
+        The rubric is supplied per-submission.
+      </div>
+    </div>
+  </div>
+
+  @if (errorMessage()) {
+    <div style="margin-bottom:20px">
+      <div class="banner banner--error" role="alert">
+        <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn"/></svg></span>
+        <div class="banner__copy">
+          <div class="banner__title">Could not create assignment</div>
+          <div class="banner__body">{{ errorMessage() }}</div>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (saved() && createdAssignmentId()) {
+    <div style="margin-bottom:20px">
+      <div class="banner banner--info" role="alert">
+        <span class="banner__icon"><svg width="16" height="16"><use href="#icon-info"/></svg></span>
+        <div class="banner__copy">
+          <div class="banner__title">Assignment created</div>
+          <div class="banner__body">
+            Assignment ID
+            <span class="mono" style="color:var(--accent)">{{ createdAssignmentId() }}</span>
+            <button class="btn btn--ghost btn--sm" type="button" (click)="copyId()" style="margin-left:8px">Copy</button>
+            — use this ID when submitting student repositories.
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Details card -->
+  <div class="card" style="border-width:1px 2px 1px 5px">
+    <div class="card__head">
+      <div>
+        <div class="card__title">Details</div>
+        <div class="card__sub">Title shown on the dashboard.</div>
+      </div>
+    </div>
+    <div class="card__body" style="display:flex;flex-direction:column;gap:18px">
+      <div class="field">
+        <label class="field__label">Assignment title <span class="field__req">*</span></label>
+        <input class="input" [(ngModel)]="title" [disabled]="saving()" />
+      </div>
+      <div class="field">
+        <label class="field__label">Rubric ID <span class="field__opt">(optional)</span></label>
+        <span class="field__hint">
+          Optional UUID of a rubric saved via <code>POST /rubrics</code>. Leave blank to attach a rubric per submission.
+        </span>
+        <input
+          class="input input--mono"
+          [(ngModel)]="rubricId"
+          [disabled]="saving()"
+          placeholder="00000000-0000-0000-0000-000000000000"
+          style="max-width:420px"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div style="height:20px"></div>
+
+  <!-- Pipeline card -->
+  <div class="card" style="border-width:1px 2px 1px 5px">
+    <div class="card__head">
+      <div>
+        <div class="card__title">Grading pipeline</div>
+        <div class="card__sub">Defines the test suite the sandbox will run, plus language and lint settings.</div>
+      </div>
+    </div>
+    <div class="card__body" style="display:flex;flex-direction:column;gap:18px">
+      <div class="field">
+        <label class="field__label">Test mode <span class="field__req">*</span></label>
+        <span class="field__hint">Choose how the pipeline locates tests for student submissions.</span>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <input
+              type="radio"
+              name="testDiscoveryMode"
+              value="instructor_suite"
+              [checked]="testDiscoveryMode === 'instructor_suite'"
+              (change)="testDiscoveryMode = 'instructor_suite'"
+              [disabled]="saving()"
+              style="margin-top:2px"
+            />
+            <span>
+              <span style="font-weight:600;color:var(--ink);font-size:13px">Instructor suite</span>
+              <span class="muted" style="font-size:12px;margin-left:4px">— provide a GitHub repo containing your test files</span>
+            </span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+            <input
+              type="radio"
+              name="testDiscoveryMode"
+              value="auto_discover"
+              [checked]="testDiscoveryMode === 'auto_discover'"
+              (change)="testDiscoveryMode = 'auto_discover'"
+              [disabled]="saving()"
+              style="margin-top:2px"
+            />
+            <span>
+              <span style="font-weight:600;color:var(--ink);font-size:13px">Auto-discover</span>
+              <span class="muted" style="font-size:12px;margin-left:4px">— AI inspects the student repo and runs its built-in test suite</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      @if (testDiscoveryMode === 'instructor_suite') {
+        <div class="field">
+          <label class="field__label">Test suite repository <span class="field__req">*</span></label>
+          <span class="field__hint">Cloned with your instructor PAT and run inside the Docker sandbox against each submission.</span>
+          <div class="input-wrap">
+            <span class="input-wrap__adorn">
+              <svg width="14" height="14"><use href="#icon-github"/></svg>
+            </span>
+            <input class="input input--mono" [(ngModel)]="testSuiteRepoUrl" [disabled]="saving()" />
+          </div>
+        </div>
+      }
+
+      <div class="field">
+        <label class="field__label">Language override</label>
+        <span class="field__hint">Optional. Leave blank to auto-detect from the student repository.</span>
+        <input
+          class="input input--mono"
+          placeholder="e.g. python 3.12"
+          [(ngModel)]="languageOverride"
+          [disabled]="saving()"
+          style="max-width:320px"
+        />
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px;background:var(--bg-subtle)">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <label class="toggle" [class.toggle--on]="enableLintReview" (click)="enableLintReview = !enableLintReview">
+            <span class="toggle__track"><span class="toggle__thumb"></span></span>
+            <input type="checkbox" [checked]="enableLintReview" style="display:none" />
+          </label>
+          <div>
+            <div style="font-weight:600;color:var(--ink);font-size:13px">Enable style and code-quality review</div>
+            <div class="muted" style="font-size:12px;margin-top:2px;max-width:520px">
+              Runs a linter on each submission and adds an AI pass that reviews style against language style guides. Adds ~8s per evaluation.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card__foot">
+      <div style="flex:1"></div>
+      <button class="btn btn--primary" (click)="create()" [disabled]="saving()">
+        @if (saving()) { Creating… } @else { Create assignment }
+        <svg width="14" height="14"><use href="#icon-chevron"/></svg>
+      </button>
+    </div>
+  </div>
+</div>

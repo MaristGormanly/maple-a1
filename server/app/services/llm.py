@@ -1,11 +1,16 @@
 """
 LLM service layer for MAPLE A1.
 
-Milestone 1 scope: Regex Redactor that strips secrets and PII before any
-data leaves the system to an external LLM API.
+Provides:
+    - Regex Redactor (`redact`, `redact_dict`) that strips GitHub PATs, emails,
+      and env-var values before any data leaves the system (M1).
+    - `complete()` wrapper with 2-retry-per-model exponential backoff,
+      standard/complex timeouts, a three-tier fallback chain
+      (gemini-3.1-pro-preview → gemini-3.1-flash-lite → gpt-4o), structured
+      JSON logging, and per-call token/cost accounting (M3).
 
-Milestone 3 scope (stub only): complete() LLM call wrapper with retry,
-fallback, structured logging, and cost tracking per Architecture Guide §4.
+Design-doc references: §4 Retry Policy, §4 Hierarchical Fallback Strategy,
+§6 Cost Estimate, §8 Milestone 3 "Finalize services/llm.py".
 """
 
 import asyncio
@@ -61,7 +66,7 @@ def _redact_recursive(obj: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Milestone 3 stubs -- LLM call wrapper
+# LLM call wrapper (M3)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -90,20 +95,73 @@ class ModelSpec:
 
 MODEL_CHAIN: list[ModelSpec] = [
     ModelSpec(name="gemini-3.1-pro-preview", provider="gemini"),
-    ModelSpec(name="gemini-3.1-flash-lite", provider="gemini"),
+    ModelSpec(name="gemini-3.1-flash-lite-preview", provider="gemini"),
     ModelSpec(name="gpt-4o", provider="openai"),
 ]
+
+
+# Public rate-card pricing (USD per 1K tokens) for observability only — not
+# authoritative billing. Tuple = (input_per_1k, output_per_1k).
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "gemini-3.1-pro-preview": (0.00125, 0.01000),
+    "gemini-3.1-flash-lite-preview": (0.00010, 0.00040),
+    "gpt-4o":                 (0.00250, 0.01000),
+}
+
+
+def _estimate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    rates = MODEL_PRICING.get(model_name)
+    if rates is None:
+        return 0.0
+    in_rate, out_rate = rates
+    return (input_tokens / 1000.0) * in_rate + (output_tokens / 1000.0) * out_rate
 
 
 class ProviderError(Exception):
     pass
 
 
-class EvaluationFailedError(Exception):
-    pass
-
+from .llm_validator import EvaluationFailedError
 
 _GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
+def _to_gemini_schema(schema: dict) -> dict:
+    """Recursively convert a JSON Schema dict to Gemini-compatible OpenAPI subset.
+
+    Strips $schema/$id/title and converts ``const: X`` → ``enum: [X]``
+    since Gemini's responseSchema follows OpenAPI 3.0, not JSON Schema.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    result: dict[str, Any] = {}
+    for k, v in schema.items():
+        if k in ("$schema", "$id", "title", "additionalProperties", "minItems",
+                 "minLength", "minimum", "maximum"):
+            continue
+        if k == "const":
+            result["type"] = "string"
+            result["enum"] = [v]
+            continue
+        # Gemini requires type to be a single string; convert ["X", "null"] →
+        # type "X" + nullable:true
+        if k == "type" and isinstance(v, list):
+            non_null = [t for t in v if t != "null"]
+            if "null" in v:
+                result["nullable"] = True
+            if non_null:
+                result[k] = non_null[0]
+            continue
+        if isinstance(v, dict):
+            result[k] = _to_gemini_schema(v)
+        elif isinstance(v, list):
+            result[k] = [
+                _to_gemini_schema(item) if isinstance(item, dict) else item
+                for item in v
+            ]
+        else:
+            result[k] = v
+    return result
 
 
 def _call_gemini(
@@ -112,6 +170,7 @@ def _call_gemini(
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     import httpx
     if not settings.GEMINI_API_KEY:
@@ -122,12 +181,17 @@ def _call_gemini(
         role = "model" if m.get("role") == "assistant" else "user"
         contents.append({"role": role, "parts": [{"text": m.get("content", "")}]})
 
+    gen_config: dict[str, Any] = {
+        "maxOutputTokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_schema is not None:
+        gen_config["responseMimeType"] = "application/json"
+        gen_config["responseSchema"] = _to_gemini_schema(response_schema)
+
     body: dict[str, Any] = {
         "contents": contents,
-        "generationConfig": {
-            "maxOutputTokens": max_tokens,
-            "temperature": temperature,
-        },
+        "generationConfig": gen_config,
     }
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
@@ -141,7 +205,7 @@ def _call_gemini(
                 "Content-Type": "application/json",
             },
             json=body,
-            timeout=30,
+            timeout=90,
         )
     except httpx.RequestError as exc:
         raise ProviderError(f"gemini request failed: {exc}") from exc
@@ -157,10 +221,12 @@ def _call_gemini(
     content = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
 
     usage_md = data.get("usageMetadata", {})
+    input_tokens = usage_md.get("promptTokenCount", 0)
+    output_tokens = usage_md.get("candidatesTokenCount", 0)
     usage = LLMUsage(
-        input_tokens=usage_md.get("promptTokenCount", 0),
-        output_tokens=usage_md.get("candidatesTokenCount", 0),
-        cost_usd=0.0,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_estimate_cost(spec.name, input_tokens, output_tokens),
     )
     return LLMResponse(content=content, usage=usage, latency_ms=0)
 
@@ -171,22 +237,28 @@ def _call_openai(
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     from openai import OpenAI
     if not settings.OPENAI_API_KEY:
         raise ProviderError("OPENAI_API_KEY not configured")
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    resp = client.chat.completions.create(
-        model=spec.name,
-        messages=[{"role": "system", "content": system}, *messages],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
+    create_kwargs: dict[str, Any] = {
+        "model": spec.name,
+        "messages": [{"role": "system", "content": system}, *messages],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_schema is not None:
+        create_kwargs["response_format"] = {"type": "json_object"}
+    resp = client.chat.completions.create(**create_kwargs)
     content = resp.choices[0].message.content or ""
+    input_tokens = resp.usage.prompt_tokens if resp.usage else 0
+    output_tokens = resp.usage.completion_tokens if resp.usage else 0
     usage = LLMUsage(
-        input_tokens=resp.usage.prompt_tokens if resp.usage else 0,
-        output_tokens=resp.usage.completion_tokens if resp.usage else 0,
-        cost_usd=0.0,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost_usd=_estimate_cost(spec.name, input_tokens, output_tokens),
     )
     return LLMResponse(content=content, usage=usage, latency_ms=0)
 
@@ -197,12 +269,38 @@ def _dispatch(
     messages: list[dict],
     max_tokens: int,
     temperature: float,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     if spec.provider == "gemini":
-        return _call_gemini(spec, system, messages, max_tokens, temperature)
+        return _call_gemini(spec, system, messages, max_tokens, temperature, response_schema)
     if spec.provider == "openai":
-        return _call_openai(spec, system, messages, max_tokens, temperature)
+        return _call_openai(spec, system, messages, max_tokens, temperature, response_schema)
     raise ProviderError(f"Unknown provider: {spec.provider}")
+
+
+def _ordered_model_chain(preferred_model: str | None) -> list[ModelSpec]:
+    """Return ``MODEL_CHAIN`` re-ordered so *preferred_model* is first.
+
+    The remaining chain members are kept in their original order so
+    fallback semantics are unchanged. Unknown names log a warning and
+    return the chain unmodified — pass-level preferences should never
+    silently disable the fallback.
+    """
+    if not preferred_model:
+        return list(MODEL_CHAIN)
+    for idx, spec in enumerate(MODEL_CHAIN):
+        if spec.name == preferred_model:
+            return [spec, *MODEL_CHAIN[:idx], *MODEL_CHAIN[idx + 1 :]]
+    logger.warning(
+        json.dumps(
+            {
+                "event": "llm_unknown_preferred_model",
+                "preferred": preferred_model,
+                "chain": [s.name for s in MODEL_CHAIN],
+            }
+        )
+    )
+    return list(MODEL_CHAIN)
 
 
 async def complete(
@@ -212,25 +310,42 @@ async def complete(
     complexity: Literal["standard", "complex"] = "standard",
     max_tokens: int = 1024,
     temperature: float = 0.7,
+    model: str | None = None,
+    timeout: int | None = None,
+    response_schema: dict | None = None,
 ) -> LLMResponse:
     """Send a completion request to the configured LLM provider.
 
     Walks MODEL_CHAIN; each model gets LLM_MAX_RETRIES attempts with
     exponential backoff. Raises EvaluationFailedError if all models
     are exhausted.
+
+    Args:
+        model: Optional preferred model name. When supplied and matched
+            in :data:`MODEL_CHAIN`, that model is tried first; remaining
+            chain members are still used as fallback. Unknown names are
+            ignored (a warning is logged) so callers can pass pass-level
+            preferences without coupling to chain membership.
+        timeout: Optional per-call timeout (seconds) overriding the
+            ``complexity``-based default. Used by the AI passes to
+            request "complex" timeouts (60s) for Pass 1/3 and a tighter
+            budget for Pass 2 without mutating settings.
     """
-    timeout = (
-        settings.LLM_TIMEOUT_COMPLEX
-        if complexity == "complex"
-        else settings.LLM_TIMEOUT_STANDARD
-    )
+    if timeout is None:
+        timeout = (
+            settings.LLM_TIMEOUT_COMPLEX
+            if complexity == "complex"
+            else settings.LLM_TIMEOUT_STANDARD
+        )
     max_retries = settings.LLM_MAX_RETRIES
     backoff_base = settings.LLM_BACKOFF_BASE
 
     safe_system = redact(system_prompt)
     safe_messages = [redact_dict(m) for m in messages]
 
-    for spec in MODEL_CHAIN:
+    chain = _ordered_model_chain(model)
+
+    for spec in chain:
         for attempt in range(1, max_retries + 1):
             t0 = time.monotonic()
             try:
@@ -238,6 +353,7 @@ async def complete(
                     asyncio.to_thread(
                         _dispatch,
                         spec, safe_system, safe_messages, max_tokens, temperature,
+                        response_schema,
                     ),
                     timeout=timeout,
                 )
@@ -251,6 +367,7 @@ async def complete(
                             "latency_ms": latency_ms,
                             "input_tokens": response.usage.input_tokens,
                             "output_tokens": response.usage.output_tokens,
+                            "cost_usd": round(response.usage.cost_usd, 6),
                             "status": "ok",
                         }
                     )
@@ -272,6 +389,7 @@ async def complete(
                                 "attempt": attempt,
                                 "latency_ms": latency_ms,
                                 "error_type": error_type,
+                                "error": str(exc)[:300],
                                 "status": "retry",
                             }
                         )
@@ -288,7 +406,8 @@ async def complete(
                                 "attempt": attempt,
                                 "latency_ms": latency_ms,
                                 "error_type": error_type,
-                                "status": "retry",
+                                "error": str(exc)[:300],
+                                "status": "final_failure",
                             }
                         )
                     )

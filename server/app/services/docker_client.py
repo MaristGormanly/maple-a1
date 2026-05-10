@@ -19,6 +19,7 @@ from .docker_runner import ContainerResult as _RunnerResult
 from .docker_runner import run_container as _docker_run
 from .log_normalizer import normalize_logs
 from .sandbox_images import get_sandbox_profile
+from ..config import settings
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,9 @@ class ContainerResult:
 
     stdout: str
     stderr: str
-    exit_code: int
+    exit_code: int | None
+    version_mismatch: bool = False
+    container_runtime_version: int | None = None
 
 
 def _build_shell_command(profile) -> list[str]:
@@ -41,10 +44,14 @@ def _build_shell_command(profile) -> list[str]:
 
     if profile.install_command:
         if profile.language == "python":
+            # Always install the test runner, then try project deps at root or server/.
             parts.append(
-                "test -f requirements.txt"
-                " && pip install --no-cache-dir -r requirements.txt"
-                " || true"
+                "pip install --no-cache-dir pytest"
+                " && ((test -f requirements.txt"
+                " && pip install --no-cache-dir -r requirements.txt)"
+                " || (test -f server/requirements.txt"
+                " && pip install --no-cache-dir -r server/requirements.txt)"
+                " || true)"
             )
         elif profile.language in {"javascript", "typescript"}:
             parts.append(
@@ -55,39 +62,93 @@ def _build_shell_command(profile) -> list[str]:
         else:
             parts.append(profile.install_command)
 
-    parts.append(profile.test_command)
+    # Expose server/ to sys.path so local packages (e.g. `app`) are importable
+    # without being pip-installed, covering repos with a server/ subdirectory layout.
+    if profile.language == "python":
+        parts.append("PYTHONPATH=/workspace/tests/server " + profile.test_command)
+    else:
+        parts.append(profile.test_command)
     return ["sh", "-c", " && ".join(parts)]
 
 
 async def run_container(
     language: str,
     student_repo_path: str,
-    test_suite_path: str,
+    test_suite_path: str | None,
     *,
     timeout_seconds: int = 30,
+    discovered_command: str | None = None,
+    discovered_working_dir: str = ".",
+    required_version: int | None = None,
 ) -> ContainerResult:
-    """Run the instructor test suite against the student repo in a container.
+    """Run tests against the student repo in a container.
 
-    Resolves a ``SandboxProfile`` from *language*, mounts the student repo
-    and test suite as read-only volumes, and delegates to the Docker runner.
+    When *discovered_command* is provided (auto_discover mode), runs that
+    command inside the student repo with no separate test suite mount.
+    Otherwise (instructor_suite mode) mounts *test_suite_path* and runs the
+    profile-defined command.
+
+    *required_version* is passed to ``get_sandbox_profile`` so the best
+    matching image is selected.  If no compatible image exists the highest
+    available is used and ``ContainerResult.version_mismatch`` will be True.
     """
-    profile = get_sandbox_profile(language)
+    profile, version_ok = get_sandbox_profile(language, required_version)
 
-    volumes = {
-        student_repo_path: {"bind": "/workspace/student", "mode": "ro"},
-        test_suite_path: {"bind": "/workspace/tests", "mode": "ro"},
+    if discovered_command is not None:
+        # auto_discover: copy the read-only source into a writable tmpfs at
+        # /workspace/build so the discovered command (mvn/gradle/pytest/jest/
+        # cmake/...) can write its build artifacts in-place like normal.
+        safe_dir = discovered_working_dir.lstrip("/") or "."
+
+        # After the discovered command, dump any JUnit-format XML test reports
+        # to stdout so the parser sees real per-test results.  Stdout-native
+        # frameworks (pytest, jest, gtest) ignore this; Maven Surefire and
+        # Gradle write XML to disk and need this extraction.
+        extract_xml = (
+            r' ; find . \( -path "*/target/surefire-reports/*.xml"'
+            r' -o -path "*/build/test-results/*/*.xml"'
+            r' -o -path "*/build/test-results/*.xml" \)'
+            r' -exec cat {} \; 2>/dev/null'
+        )
+        inner = (
+            f"cp -a /workspace/source/. /workspace/build/"
+            f" && cd /workspace/build/{safe_dir}"
+            f" && {discovered_command}"
+            f"{extract_xml}"
+        )
+        command = ["sh", "-c", inner]
+        volumes = {
+            student_repo_path: {"bind": "/workspace/source", "mode": "ro"},
+        }
+    else:
+        # instructor_suite: mount test suite separately (existing behavior)
+        volumes = {
+            student_repo_path: {"bind": "/workspace/student", "mode": "ro"},
+            test_suite_path: {"bind": "/workspace/tests", "mode": "ro"},
+        }
+        command = _build_shell_command(profile)
+
+    # Dummy env vars satisfy projects whose config layer (e.g. pydantic-settings)
+    # requires variables to be present at module import time. Tests should mock
+    # real services; these only let the module graph load.
+    sandbox_environment = {
+        "DATABASE_URL": "postgresql+asyncpg://sandbox:sandbox@localhost:5432/sandbox",
+        "SECRET_KEY": "sandbox-secret-key-not-used-for-real-auth-padding",
+        "GITHUB_PAT": "ghp_sandbox_placeholder",
+        "APP_ENV": "test",
     }
 
-    command = _build_shell_command(profile)
+    container_working_dir = "/workspace/build" if discovered_command is not None else profile.working_dir
 
     config = ContainerConfig(
         image=profile.image,
         command=command,
         volumes=volumes,
-        working_dir=profile.working_dir,
+        environment=sandbox_environment,
+        working_dir=container_working_dir,
         timeout=timeout_seconds,
-        # Network: student code must not reach the internet
-        network_disabled=True,
+        # Network: disabled in production; allowed in dev so pip can install deps.
+        network_disabled=(settings.APP_ENV == "production"),
         # Memory: cap each container at 256 MB
         mem_limit="256m",
         # CPU: 50% of one core (quota/period = 0.5)
@@ -101,8 +162,16 @@ async def run_container(
         # caches that can't be suppressed)
         read_only=True,
         tmpfs={
-            "/tmp": "size=64m,mode=1777",
-            "/root": "size=64m",
+            "/tmp": "size=256m,mode=1777,exec",
+            "/root": "size=768m",
+            # auto_discover copies the read-only source here and runs the
+            # discovered command in this writable workdir. Big enough for
+            # source + compiled artifacts; sized to fit within host RAM.
+            **(
+                {"/workspace/build": "size=1g,exec"}
+                if discovered_command is not None
+                else {}
+            ),
         },
     )
 
@@ -111,4 +180,6 @@ async def run_container(
         stdout=normalize_logs(result.stdout),
         stderr=normalize_logs(result.stderr),
         exit_code=result.exit_code,
+        version_mismatch=not version_ok,
+        container_runtime_version=profile.runtime_version,
     )

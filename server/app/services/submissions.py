@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..models.evaluation_result import EvaluationResult
 from ..models.submission import Submission
@@ -23,6 +24,7 @@ async def create_submission(
     github_repo_url: str,
     commit_hash: str | None = None,
     status: str = "Pending",
+    student_name: str | None = None,
 ) -> Submission:
     """Persist a new Submission row and return the refreshed ORM instance.
 
@@ -37,6 +39,7 @@ async def create_submission(
         github_repo_url=github_repo_url,
         commit_hash=commit_hash,
         status=status,
+        student_name=student_name or None,
     )
     db.add(submission)
     await db.commit()
@@ -52,6 +55,38 @@ async def get_submission_by_id(
         select(Submission).where(Submission.id == submission_id)
     )
     return result.scalar_one_or_none()
+
+
+async def delete_submission(
+    db: AsyncSession,
+    submission_id: uuid.UUID,
+) -> bool:
+    submission = await get_submission_by_id(db, submission_id)
+    if submission is None:
+        return False
+    await db.delete(submission)
+    await db.commit()
+    return True
+
+
+async def list_submissions(
+    db: AsyncSession,
+    *,
+    role: str,
+    user_id: uuid.UUID,
+) -> list[Submission]:
+    q = (
+        select(Submission)
+        .options(
+            selectinload(Submission.student),
+            selectinload(Submission.evaluation_result),
+        )
+        .order_by(Submission.created_at.desc())
+    )
+    if role.strip().lower() not in ("instructor", "admin"):
+        q = q.where(Submission.student_id == user_id)
+    result = await db.execute(q)
+    return list(result.scalars().all())
 
 
 async def persist_evaluation_result(
@@ -241,3 +276,28 @@ async def update_submission_status(
     await db.commit()
     await db.refresh(submission)
     return submission
+
+
+async def recover_orphaned_submissions() -> int:
+    """Mark any mid-pipeline submissions as Failed at server startup.
+
+    Submissions left in 'Testing' or 'Evaluating' after a crash or
+    reload will never advance on their own. This resets them so the
+    frontend stops polling.
+
+    Returns the number of submissions recovered.
+    """
+    from ..models.database import async_session_maker
+
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(Submission).where(
+                Submission.status.in_(["Testing", "Evaluating"])
+            )
+        )
+        orphans = list(result.scalars().all())
+        for sub in orphans:
+            sub.status = "Failed"
+        if orphans:
+            await db.commit()
+        return len(orphans)

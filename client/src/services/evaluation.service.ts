@@ -1,36 +1,35 @@
-import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
 import { environment } from '../environments/environment';
-import { ReviewRequest, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
+import { DeleteResponse, ReviewRequest, SubmissionListResponse, SubmissionResponse, SubmissionStatusResponse } from '../utils/api.types';
 
 @Injectable({ providedIn: 'root' })
 export class EvaluationService {
+  private http = inject(HttpClient);
+
   private readonly url = `${environment.apiBaseUrl}/api/v1/code-eval/evaluate`;
   private readonly submissionsUrl = `${environment.apiBaseUrl}/api/v1/code-eval/submissions`;
 
-  constructor(private http: HttpClient) {}
+  // The Authorization header is attached automatically by `authInterceptor`
+  // (registered in app.config.ts) so individual methods do not build it.
 
-  // TODO: Replace devToken stub with a real token from the auth service once
-  // POST /api/v1/code-eval/auth/login is implemented (Milestone 2).
   submitEvaluation(
     githubUrl: string,
     assignmentId: string,
-    rubricFile: File
+    rubricFile: File,
+    studentName?: string | null,
   ): Observable<SubmissionResponse> {
     const body = new FormData();
     body.append('github_url', githubUrl);
     body.append('assignment_id', assignmentId);
     body.append('rubric', rubricFile);
+    if (studentName) body.append('student_name', studentName);
 
     // Do not set Content-Type manually — the browser sets multipart/form-data
     // with the correct boundary automatically when the body is FormData.
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-    });
-
-    return this.http.post<SubmissionResponse>(this.url, body, { headers }).pipe(
+    return this.http.post<SubmissionResponse>(this.url, body).pipe(
       catchError((err) => {
         const message: string =
           err?.error?.error?.message ?? err?.message ?? 'Unknown error';
@@ -51,11 +50,8 @@ export class EvaluationService {
   }
 
   getSubmissionStatus(submissionId: string): Observable<SubmissionStatusResponse> {
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-    });
     return this.http
-      .get<SubmissionStatusResponse>(`${this.submissionsUrl}/${submissionId}`, { headers })
+      .get<SubmissionStatusResponse>(`${this.submissionsUrl}/${submissionId}`)
       .pipe(
         catchError((err) => {
           const message: string =
@@ -76,16 +72,43 @@ export class EvaluationService {
       );
   }
 
+  getSubmissions(): Observable<SubmissionListResponse> {
+    return this.http
+      .get<SubmissionListResponse>(this.submissionsUrl)
+      .pipe(
+        catchError((err) => {
+          const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+          const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+          return of<SubmissionListResponse>({
+            success: false,
+            data: null,
+            error: { code, message },
+            metadata: { timestamp: new Date().toISOString(), module: 'a1', version: 'unknown' },
+          });
+        })
+      );
+  }
+
+  deleteSubmission(id: string): Observable<DeleteResponse> {
+    return this.http.delete<DeleteResponse>(`${this.submissionsUrl}/${id}`).pipe(
+      catchError((err) => {
+        const message: string = err?.error?.error?.message ?? err?.message ?? 'Unknown error';
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        return of<DeleteResponse>({
+          success: false,
+          data: null,
+          error: { code, message },
+          metadata: { timestamp: new Date().toISOString(), module: 'a1', version: 'unknown' },
+        });
+      }),
+    );
+  }
+
   submitReview(submissionId: string, request: ReviewRequest): Observable<SubmissionStatusResponse> {
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${environment.devToken ?? ''}`,
-      'Content-Type': 'application/json',
-    });
     return this.http
       .post<SubmissionStatusResponse>(
         `${this.submissionsUrl}/${submissionId}/review`,
         request,
-        { headers }
       )
       .pipe(
         catchError((err) => {

@@ -33,6 +33,7 @@ from __future__ import annotations
 import inspect
 import logging
 import shutil
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -40,11 +41,16 @@ from typing import Any
 
 from ..models.database import async_session_maker
 from . import llm
+# region agent log
+from ._debug_log import dlog as _dlog  # debug session d6fd1e
+# endregion
 from .ai_passes import run_pass1, run_pass2, run_pass3
 from .assignments import get_assignment_by_id
 from .ast_chunker import CodeChunk, extract_chunks
 from .docker_client import run_container
-from .language_detector import detect_language_version
+from .test_discoverer import DiscoveredTestPlan, discover_tests
+from .git_ingest import CloneError, clone_repository
+from .language_detector import detect_language_version, parse_major_version
 from .llm_validator import EvaluationFailedError
 from .review_flags import compute_review_flags, determine_terminal_status
 from .scoring import calculate_deterministic_score
@@ -58,7 +64,17 @@ from .test_parser import parse_test_results
 
 logger = logging.getLogger(__name__)
 
-_CONTAINER_TIMEOUT_SECONDS = 30
+_CONTAINER_TIMEOUT_SECONDS = 120
+
+
+def _resolve_clone_repository():
+    """Return a clone function, preferring app.main for test patching compatibility."""
+    app_main = sys.modules.get("app.main")
+    if app_main is not None:
+        maybe_clone = getattr(app_main, "clone_repository", None)
+        if callable(maybe_clone):
+            return maybe_clone
+    return clone_repository
 
 # --- Optional Jayden hooks (lazy imports, safe defaults) -------------------
 #
@@ -72,9 +88,9 @@ except Exception:  # pragma: no cover -- import guard
     _retrieve_style_chunks = None  # type: ignore[assignment]
 
 try:  # pragma: no cover -- import guard
-    from .linter import run_linters as _run_linters  # type: ignore
+    from .linter_runner import run_linter as _run_linter  # type: ignore
 except Exception:  # pragma: no cover -- import guard
-    _run_linters = None  # type: ignore[assignment]
+    _run_linter = None  # type: ignore[assignment]
 
 
 # Cap chunker walks to avoid pathological repos exhausting the Pass 2
@@ -105,10 +121,18 @@ def _is_llm_ready() -> bool:
     matches and the AI phase activates automatically.
     """
     try:
+        sig = inspect.signature(llm.complete)
+        has_var_kw = any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if "model" not in sig.parameters and not has_var_kw:
+            return False
+    except (TypeError, ValueError):
+        pass
+
+    try:
         src = inspect.getsource(llm.complete)
     except (TypeError, OSError):
-        # Source unavailable (e.g. C-implemented) — assume ready and
-        # let any real failure surface during the actual call.
         return True
     return "raise NotImplementedError" not in src
 
@@ -124,6 +148,18 @@ async def run_pipeline(
     rubric_content: object,
     github_pat: str,
 ) -> None:
+    # region agent log
+    _dlog(
+        location="pipeline.py:run_pipeline:enter",
+        hypothesis_id="A,B,F",
+        message="run_pipeline entered",
+        data={
+            "submission_id": str(submission_id),
+            "assignment_id": str(assignment_id) if assignment_id else None,
+            "student_repo_path": student_repo_path,
+        },
+    )
+    # endregion
     if assignment_id is None:
         return
 
@@ -133,29 +169,165 @@ async def run_pipeline(
             if await update_submission_status(db, submission_id, "Testing") is None:
                 logger.warning("run_pipeline: submission %s not found", submission_id)
                 return
+            _dlog(
+                location="pipeline.py:run_pipeline:status_set_testing",
+                hypothesis_id="A,B,F",
+                message="status set to Testing",
+                data={"submission_id": str(submission_id)},
+                run_id=str(submission_id)[:8],
+            )
             assignment = await get_assignment_by_id(db, assignment_id)
             if assignment is None:
                 await update_submission_status(db, submission_id, "Failed")
                 return
             suite_url = (assignment.test_suite_repo_url or "").strip()
-            if not suite_url:
+            _raw_mode = getattr(assignment, "test_discovery_mode", None)
+            test_discovery_mode = _raw_mode if _raw_mode in ("instructor_suite", "auto_discover") else "instructor_suite"
+            if test_discovery_mode == "instructor_suite" and not suite_url:
                 await update_submission_status(db, submission_id, "Failed")
                 return
             language_override = assignment.language_override
             enable_lint_review = bool(assignment.enable_lint_review)
-
-        test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
-        from .. import main as app_main
-
-        await app_main.clone_repository(suite_url, test_suite_dir, github_pat)
+            _dlog(
+                location="pipeline.py:run_pipeline:assignment_resolved",
+                hypothesis_id="A,B",
+                message="assignment loaded",
+                data={
+                    "submission_id": str(submission_id),
+                    "suite_url": suite_url,
+                    "language_override": language_override,
+                    "enable_lint_review": enable_lint_review,
+                },
+                run_id=str(submission_id)[:8],
+            )
 
         lang = detect_language_version(student_repo_path, language_override)
         language = lang.get("language", "")
-        container = await run_container(
-            language,
-            student_repo_path,
-            str(test_suite_dir.resolve()),
-            timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+        required_version = parse_major_version(language, lang.get("version"))
+
+        _discovered_plan: DiscoveredTestPlan | None = None
+
+        if test_discovery_mode == "auto_discover":
+            _dlog(
+                location="pipeline.py:run_pipeline:auto_discover_start",
+                hypothesis_id="A,B",
+                message="auto_discover: calling test_discoverer",
+                data={"submission_id": str(submission_id)},
+                run_id=str(submission_id)[:8],
+            )
+            _discovered_plan = await discover_tests(student_repo_path)
+            logger.info(
+                "run_pipeline: auto_discover finished — has_tests=%s framework=%s "
+                "confidence=%.2f command=%r",
+                _discovered_plan.has_tests,
+                _discovered_plan.framework,
+                _discovered_plan.confidence,
+                _discovered_plan.command,
+            )
+            if not _discovered_plan.has_tests:
+                logger.warning(
+                    "run_pipeline: auto_discover found no tests for submission %s — %s",
+                    submission_id,
+                    _discovered_plan.reasoning,
+                )
+                async with async_session_maker() as db:
+                    await update_submission_status(db, submission_id, "Failed")
+                return
+        else:
+            test_suite_dir = Path(tempfile.mkdtemp(prefix="maple-testsuite-"))
+            clone_impl = _resolve_clone_repository()
+            _dlog(
+                location="pipeline.py:run_pipeline:clone_start",
+                hypothesis_id="A,B",
+                message="about to clone test suite",
+                data={"submission_id": str(submission_id), "suite_url": suite_url},
+                run_id=str(submission_id)[:8],
+            )
+            try:
+                await clone_impl(suite_url, test_suite_dir, github_pat)
+            except CloneError as exc:
+                shutil.rmtree(test_suite_dir, ignore_errors=True)
+                logger.error("run_pipeline: test suite clone failed: %s", exc.message)
+                await update_submission_status(db, submission_id, "Failed")
+                return
+            _dlog(
+                location="pipeline.py:run_pipeline:clone_done",
+                hypothesis_id="A,B",
+                message="test suite cloned successfully",
+                data={
+                    "submission_id": str(submission_id),
+                    "test_suite_dir": str(test_suite_dir),
+                },
+                run_id=str(submission_id)[:8],
+            )
+
+        _dlog(
+            location="pipeline.py:run_pipeline:container_start",
+            hypothesis_id="A,B",
+            message="about to run student container",
+            data={
+                "submission_id": str(submission_id),
+                "language": language,
+                "timeout_seconds": _CONTAINER_TIMEOUT_SECONDS,
+                "test_discovery_mode": test_discovery_mode,
+            },
+            run_id=str(submission_id)[:8],
+        )
+        _container_run_error: str | None = None
+        try:
+            if _discovered_plan is not None:
+                container = await run_container(
+                    language,
+                    student_repo_path,
+                    None,
+                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+                    discovered_command=_discovered_plan.command,
+                    discovered_working_dir=_discovered_plan.working_dir,
+                    required_version=required_version,
+                )
+            else:
+                container = await run_container(
+                    language,
+                    student_repo_path,
+                    str(test_suite_dir.resolve()),
+                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
+                    required_version=required_version,
+                )
+        except Exception as _exc:
+            _container_run_error = str(_exc)
+            logger.warning(
+                "run_pipeline: container run failed; continuing with null test results — %s",
+                _container_run_error,
+            )
+            from .docker_client import ContainerResult as _ContainerResult
+            container = _ContainerResult(stdout="", stderr="", exit_code=None)
+
+        if container.version_mismatch:
+            _mismatch_note = (
+                f"[MAPLE] Version mismatch: project requires {language} {required_version}, "
+                f"container provides {container.container_runtime_version}. "
+                "Build failure below is likely due to this incompatibility, not a code logic error.\n"
+            )
+            logger.warning(
+                "run_pipeline: version mismatch for submission %s — required=%s available=%s",
+                submission_id,
+                required_version,
+                container.container_runtime_version,
+            )
+            from dataclasses import replace as _dc_replace
+            container = _dc_replace(container, stderr=_mismatch_note + (container.stderr or ""))
+
+        _dlog(
+            location="pipeline.py:run_pipeline:container_done",
+            hypothesis_id="A,B",
+            message="container finished",
+            data={
+                "submission_id": str(submission_id),
+                "exit_code": container.exit_code,
+                "stdout_len": len(container.stdout or ""),
+                "stderr_len": len(container.stderr or ""),
+            },
+            run_id=str(submission_id)[:8],
         )
 
         parsed = parse_test_results(container.stdout, container.stderr, container.exit_code)
@@ -171,9 +343,29 @@ async def run_pipeline(
                 "failed": parsed.get("failed", 0),
                 "errors": parsed.get("errors", 0),
                 "skipped": parsed.get("skipped", 0),
+                "tests": parsed.get("tests", []),
             },
         }
+        if container.version_mismatch:
+            metadata_json["version_mismatch"] = {
+                "required": required_version,
+                "available": container.container_runtime_version,
+                "language": language,
+            }
+        if _discovered_plan is not None:
+            metadata_json["test_discovery"] = {
+                "framework": _discovered_plan.framework,
+                "command": _discovered_plan.command,
+                "confidence": _discovered_plan.confidence,
+                "reasoning": _discovered_plan.reasoning,
+            }
 
+        # Persist deterministic results first; status transitions are
+        # decided by whether the AI phase will run.  We deliberately
+        # do NOT mark "Completed" yet when the AI phase is queued — a
+        # transient "Completed" would let the frontend's
+        # ``TERMINAL_STATUSES`` poll guard short-circuit before AI
+        # feedback lands (status-page.component.ts).
         async with async_session_maker() as db:
             await persist_evaluation_result(
                 db,
@@ -181,14 +373,42 @@ async def run_pipeline(
                 deterministic_score=score,
                 metadata_json=metadata_json,
             )
-            await update_submission_status(db, submission_id, "Completed")
+        _dlog(
+            location="pipeline.py:run_pipeline:deterministic_persisted",
+            hypothesis_id="A,B",
+            message="deterministic result persisted",
+            data={
+                "submission_id": str(submission_id),
+                "deterministic_score": score,
+            },
+            run_id=str(submission_id)[:8],
+        )
 
         # ---------------- Milestone 3: Evaluating phase ----------------
         # Runs only when Jayden's LLM wrapper is operational.  Any
         # LLM/schema failure is handled inline (mapped to
         # EVALUATION_FAILED) so it does NOT cascade into the outer
         # generic-Failed branch below.
-        if _is_llm_ready():
+        # region agent log
+        _llm_ready_value = _is_llm_ready()
+        _dlog(
+            location="pipeline.py:run_pipeline:llm_ready_gate",
+            hypothesis_id="A,B",
+            message="post-deterministic; checking LLM readiness",
+            data={
+                "submission_id": str(submission_id),
+                "is_llm_ready": _llm_ready_value,
+                "deterministic_score": score,
+                "test_count_total": (
+                    parsed.get("passed", 0) + parsed.get("failed", 0)
+                    + parsed.get("errors", 0) + parsed.get("skipped", 0)
+                ),
+                "language": language,
+                "enable_lint_review": enable_lint_review,
+            },
+        )
+        # endregion
+        if _llm_ready_value:
             await _run_evaluating_phase(
                 submission_id=submission_id,
                 student_repo_path=student_repo_path,
@@ -201,18 +421,48 @@ async def run_pipeline(
                 metadata_json=metadata_json,
             )
         else:
+            # region agent log
+            _dlog(
+                location="pipeline.py:run_pipeline:llm_not_ready",
+                hypothesis_id="A",
+                message="AI phase skipped because _is_llm_ready returned False",
+                data={"submission_id": str(submission_id)},
+            )
+            # endregion
             logger.info(
                 "run_pipeline: skipping AI phase for submission %s — "
                 "llm.complete is still the M1 stub",
                 submission_id,
             )
+            async with async_session_maker() as db:
+                await update_submission_status(db, submission_id, "Completed")
     except DuplicateEvaluationError:
+        # region agent log
+        _dlog(
+            location="pipeline.py:run_pipeline:duplicate_eval",
+            hypothesis_id="F",
+            message="DuplicateEvaluationError caught — existing result preserved",
+            data={"submission_id": str(submission_id)},
+        )
+        # endregion
         logger.info(
             "run_pipeline: duplicate evaluation for submission %s — "
             "keeping existing result and Completed status",
             submission_id,
         )
-    except Exception:
+    except Exception as _exc:
+        # region agent log
+        _dlog(
+            location="pipeline.py:run_pipeline:generic_exception",
+            hypothesis_id="B,D",
+            message="run_pipeline outer except Exception fired",
+            data={
+                "submission_id": str(submission_id),
+                "exc_type": type(_exc).__name__,
+                "exc_str": str(_exc)[:300],
+            },
+        )
+        # endregion
         logger.exception("run_pipeline failed for submission %s", submission_id)
         try:
             async with async_session_maker() as db:
@@ -229,6 +479,120 @@ async def run_pipeline(
 # ---------------------------------------------------------------------------
 # Milestone 3 — Evaluating phase
 # ---------------------------------------------------------------------------
+
+def _normalize_criteria_scores(envelope: dict) -> None:
+    """Convert LLM 1-5 ordinal scores to 0-100: 50 + (score - 1) * 12.5."""
+    for criterion in envelope.get("criteria_scores") or []:
+        if not isinstance(criterion, dict):
+            continue
+        if "criterion_name" not in criterion and criterion.get("name"):
+            criterion["criterion_name"] = criterion["name"]
+        raw = criterion.get("score")
+        if isinstance(raw, (int, float)) and 1 <= raw <= 5:
+            criterion["score"] = round(50 + (raw - 1) * 12.5, 2)
+
+
+_LEVEL_TO_NUMERIC_STANDARD: dict[str, str] = {
+    "NEEDS_IMPROVEMENT": "1",
+    "WEAK": "2",
+    "ACCEPTABLE": "3",
+    "STRONG": "4",
+    "EXEMPLARY": "5",
+}
+
+
+def _normalize_text_key(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _extract_rubric_standard_index(rubric_content: object) -> dict[str, dict[str, Any]]:
+    """Return rubric standards keyed by normalized criterion/category name."""
+    if not isinstance(rubric_content, dict):
+        return {}
+
+    index: dict[str, dict[str, Any]] = {}
+
+    canonical_criteria = rubric_content.get("criteria")
+    if isinstance(canonical_criteria, list):
+        for criterion in canonical_criteria:
+            if not isinstance(criterion, dict):
+                continue
+            name = criterion.get("name")
+            key = _normalize_text_key(name)
+            if not key:
+                continue
+            levels: dict[str, str] = {}
+            raw_levels = criterion.get("levels")
+            if isinstance(raw_levels, list):
+                for level in raw_levels:
+                    if not isinstance(level, dict):
+                        continue
+                    label = level.get("label")
+                    description = level.get("description")
+                    if label is not None and isinstance(description, str):
+                        levels[str(label)] = description
+            index[key] = {
+                "name": str(name),
+                "weight": criterion.get("weight"),
+                "levels": levels,
+            }
+
+    segments = rubric_content.get("segments")
+    if isinstance(segments, list):
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            category = segment.get("category")
+            key = _normalize_text_key(category)
+            criteria = segment.get("criteria")
+            if not key or not isinstance(criteria, dict):
+                continue
+            levels = {
+                str(label): description
+                for label, description in criteria.items()
+                if isinstance(description, str)
+            }
+            index[key] = {
+                "name": str(category),
+                "weight": segment.get("weight"),
+                "levels": levels,
+            }
+
+    return index
+
+
+def _level_standard_key(level: object) -> str | None:
+    if not isinstance(level, str):
+        return None
+    return _LEVEL_TO_NUMERIC_STANDARD.get(level) or level
+
+
+def _attach_rubric_standards(envelope: dict, rubric_content: object) -> None:
+    """Attach the matched instructor rubric standard to each final criterion."""
+    standards = _extract_rubric_standard_index(rubric_content)
+    if not standards:
+        return
+
+    for criterion in envelope.get("criteria_scores") or []:
+        if not isinstance(criterion, dict):
+            continue
+        criterion_name = criterion.get("criterion_name") or criterion.get("name")
+        criterion["criterion_name"] = criterion_name
+        standard = standards.get(_normalize_text_key(criterion_name))
+        if not standard:
+            continue
+        level_key = _level_standard_key(criterion.get("level"))
+        if level_key is None:
+            continue
+        description = standard["levels"].get(level_key)
+        if description is None:
+            description = standard["levels"].get(str(criterion.get("level")))
+        if isinstance(description, str) and description:
+            criterion["rubric_standard"] = description
+        weight = standard.get("weight")
+        if isinstance(weight, str) and weight:
+            criterion["rubric_weight"] = weight
+
 
 async def _run_evaluating_phase(
     *,
@@ -258,10 +622,10 @@ async def _run_evaluating_phase(
     # Linter results — Jayden's hook.  When unavailable, we pass
     # ``None`` so Pass 2's skip-logic can still fire correctly.
     linter_violations: list[dict] | None = None
-    if _run_linters is not None:
+    if _run_linter is not None:
         try:
             linter_violations = await _maybe_await(
-                _run_linters(student_repo_path, language=language)
+                _run_linter(language, str(student_repo_path))
             )
         except Exception:
             logger.exception(
@@ -278,6 +642,28 @@ async def _run_evaluating_phase(
     async with async_session_maker() as db:
         await update_submission_status(db, submission_id, "Evaluating")
 
+    # region agent log
+    _dlog(
+        location="pipeline.py:_run_evaluating_phase:enter",
+        hypothesis_id="B,C,E",
+        message="entering AI evaluating phase",
+        data={
+            "submission_id": str(submission_id),
+            "code_chunks_count": len(code_chunks),
+            "linter_violations_count": (
+                0 if linter_violations is None else len(linter_violations)
+            ),
+            "rubric_requires_style": rubric_requires_style,
+            "rubric_text_len": len(rubric_text),
+            "test_count_total": (
+                parsed.get("passed", 0) + parsed.get("failed", 0)
+                + parsed.get("errors", 0) + parsed.get("skipped", 0)
+            ),
+            "tests_in_payload": len(parsed.get("tests", []) or []),
+        },
+    )
+    # endregion
+
     try:
         pass1 = await run_pass1(
             parsed_test_results=parsed,
@@ -285,6 +671,20 @@ async def _run_evaluating_phase(
             exit_code=container_exit_code,
             resource_constraint_metadata=parsed.get("resource_constraint_metadata"),
         )
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass1_done",
+            hypothesis_id="B,C",
+            message="pass1 returned",
+            data={
+                "submission_id": str(submission_id),
+                "pass1_keys": list(pass1.keys()) if isinstance(pass1, dict) else None,
+                "pass1_failures_count": len(
+                    pass1.get("failures", []) if isinstance(pass1, dict) else []
+                ),
+            },
+        )
+        # endregion
 
         reasoning = await run_pass2(
             pass1_result=pass1,
@@ -296,6 +696,25 @@ async def _run_evaluating_phase(
             language=language,
             style_retriever=_retrieve_style_chunks,
         )
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass2_done",
+            hypothesis_id="B,C",
+            message="pass2 returned",
+            data={
+                "submission_id": str(submission_id),
+                "reasoning_keys": list(reasoning.keys()) if isinstance(reasoning, dict) else None,
+                "pass2_skipped": (
+                    reasoning.get("pass2", {}).get("skipped")
+                    if isinstance(reasoning, dict) else None
+                ),
+                "pass2_findings_count": len(
+                    (reasoning.get("pass2", {}) or {}).get("findings", [])
+                    if isinstance(reasoning, dict) else []
+                ),
+            },
+        )
+        # endregion
 
         envelope = await run_pass3(
             reasoning=reasoning,
@@ -304,7 +723,39 @@ async def _run_evaluating_phase(
             metadata=metadata_json,
             code_chunks=code_chunks,
         )
+        _normalize_criteria_scores(envelope)
+        _attach_rubric_standards(envelope, rubric_content)
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:pass3_done",
+            hypothesis_id="C,D",
+            message="pass3 returned",
+            data={
+                "submission_id": str(submission_id),
+                "envelope_keys": list(envelope.keys()) if isinstance(envelope, dict) else None,
+                "criteria_scores_count": len(envelope.get("criteria_scores", []) or []),
+                "flags": envelope.get("flags", []),
+                "per_criterion_recs_counts": [
+                    len(c.get("recommendations", []) or [])
+                    for c in (envelope.get("criteria_scores", []) or [])
+                    if isinstance(c, dict)
+                ],
+            },
+        )
+        # endregion
     except EvaluationFailedError as exc:
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:evaluation_failed",
+            hypothesis_id="B,C",
+            message="EvaluationFailedError caught — schema/repair exhausted",
+            data={
+                "submission_id": str(submission_id),
+                "error_str": str(exc)[:300],
+                "validation_errors": getattr(exc, "validation_errors", None),
+            },
+        )
+        # endregion
         logger.error(
             "run_pipeline: AI passes failed schema validation for submission %s "
             "after one repair retry; marking EVALUATION_FAILED. errors=%s",
@@ -353,6 +804,19 @@ async def _run_evaluating_phase(
     terminal_status = determine_terminal_status(awaiting_review)
 
     try:
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:before_persist",
+            hypothesis_id="C,D",
+            message="about to persist ai_feedback_json + terminal status",
+            data={
+                "submission_id": str(submission_id),
+                "terminal_status": terminal_status,
+                "criteria_scores_count": len(envelope.get("criteria_scores", []) or []),
+                "flags_in_envelope": envelope.get("flags", []),
+            },
+        )
+        # endregion
         async with async_session_maker() as db:
             await update_evaluation_result(
                 db,
@@ -361,6 +825,17 @@ async def _run_evaluating_phase(
                 metadata_json=metadata_json,
             )
             await update_submission_status(db, submission_id, terminal_status)
+        # region agent log
+        _dlog(
+            location="pipeline.py:_run_evaluating_phase:after_persist",
+            hypothesis_id="C,D",
+            message="ai_feedback_json persisted; terminal status set",
+            data={
+                "submission_id": str(submission_id),
+                "terminal_status": terminal_status,
+            },
+        )
+        # endregion
     except Exception:
         # Persistence error after a successful AI run — log and bubble
         # so the outer except can decide.  We deliberately do NOT mark

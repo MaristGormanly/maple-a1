@@ -24,7 +24,7 @@ def _envelope(criteria, *, flags=None) -> dict:
     }
 
 
-def _crit(*, name="C", score=80, level="Proficient", confidence=0.9) -> dict:
+def _crit(*, name="C", score=80, level="STRONG", confidence=0.9) -> dict:
     return {
         "name": name,
         "score": score,
@@ -116,8 +116,8 @@ class LowConfidenceTriggerTests(unittest.TestCase):
     def test_missing_or_non_numeric_confidence_is_ignored(self) -> None:
         env = _envelope(
             [
-                {"name": "C", "score": 80, "level": "Proficient", "justification": "ok"},
-                {"name": "D", "score": 80, "level": "Proficient", "justification": "ok",
+                {"name": "C", "score": 80, "level": "STRONG", "justification": "ok"},
+                {"name": "D", "score": 80, "level": "STRONG", "justification": "ok",
                  "confidence": "high"},
             ]
         )

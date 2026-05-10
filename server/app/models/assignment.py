@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import String, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from server.app.models.database import Base
+from .database import Base
 
 
 class Assignment(Base):
@@ -20,7 +20,9 @@ class Assignment(Base):
     )
     enable_lint_review: Mapped[bool] = mapped_column(Boolean, default=False)
     language_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    test_discovery_mode: Mapped[str] = mapped_column(String, nullable=False, default="instructor_suite")
 
     instructor = relationship("User", back_populates="assignments")
     rubric = relationship("Rubric", back_populates="assignments")
-    submissions = relationship("Submission", back_populates="assignment")
+    submissions = relationship("Submission", back_populates="assignment",
+                              cascade="all, delete-orphan", passive_deletes=True)

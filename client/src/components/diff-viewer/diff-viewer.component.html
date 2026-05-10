@@ -1,32 +1,36 @@
 @if (fileGroups.length > 0) {
-  <div class="diff-section">
-    <p class="diff-section-heading">Recommendations</p>
+  <div>
+    <div class="section-title">
+      Suggested edits
+      <span class="section-title__count">
+        {{totalHunks()}} change set{{totalHunks() !== 1 ? 's' : ''}} across {{fileGroups.length}} file{{fileGroups.length !== 1 ? 's' : ''}}
+      </span>
+    </div>
 
     @for (group of fileGroups; track group.filePath) {
-      <div class="file-group">
-        <div class="file-header">
-          <span class="file-path">{{ group.filePath }}</span>
+      <div class="diff-file">
+        <div class="diff-file__head">
+          <svg width="13" height="13"><use href="#icon-file"/></svg>
+          <span class="diff-file__path">{{group.filePath}}</span>
+          <span class="muted">· {{group.items.length}} hunk{{group.items.length !== 1 ? 's' : ''}}</span>
         </div>
 
         @for (entry of group.items; track entry.rec.line_range.start) {
-          <div class="rec-block">
-            <div class="rec-meta">
-              <span class="line-range">
-                Lines {{ entry.rec.line_range.start }}–{{ entry.rec.line_range.end }}
-              </span>
-              @if (entry.rec.rationale) {
-                <span class="rationale">{{ entry.rec.rationale }}</span>
-              }
+          <div class="diff-hunk">
+            <div class="diff-hunk__meta">
+              <span>@@ lines {{entry.rec.line_range.start}}–{{entry.rec.line_range.end}} @@</span>
+              <span style="flex:1"></span>
+              <span>+{{entry.addCount}} / −{{entry.delCount}}</span>
             </div>
-
-            <table class="diff-table" aria-label="Code diff for {{ group.filePath }}">
+            @if (entry.rec.rationale) {
+              <div class="diff-hunk__rationale">{{entry.rec.rationale}}</div>
+            }
+            <table class="diff-table" [attr.aria-label]="'Code diff for ' + group.filePath">
               <tbody>
-                @for (line of entry.parsedDiff; track $index) {
-                  <tr [ngClass]="lineClass(line.type)">
-                    <td class="diff-gutter" [ngClass]="gutterClass(line.type)" aria-hidden="true">
-                      {{ gutterSymbol(line.type) }}
-                    </td>
-                    <td class="diff-content">{{ line.content }}</td>
+                @for (line of entry.lines; track $index) {
+                  <tr [class.diff-row--add]="line.type === 'add'" [class.diff-row--del]="line.type === 'del'" [class.diff-row--ctx]="line.type === 'ctx'">
+                    <td class="diff-gutter" aria-hidden="true">{{gutterSymbol(line.type)}}</td>
+                    <td class="diff-content">{{line.content || ' '}}</td>
                   </tr>
                 }
               </tbody>

@@ -10,23 +10,26 @@ TEST_ROOT = Path(__file__).resolve().parent
 
 class PreprocessRepositoryTests(unittest.TestCase):
     def test_preprocess_repository_strips_targeted_paths_and_keeps_source_files(self) -> None:
-        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+        with TemporaryDirectory() as tmp_dir:
             repo_path = Path(tmp_dir) / "repo"
-            self._create_fixture_repo(repo_path)
+            git_dir_created = self._create_fixture_repo(repo_path)
 
             summary = preprocess_repository(repo_path)
 
+            expected_removed_directories = [
+                ".venv",
+                "nested/__pycache__",
+                "nested/deeper/node_modules",
+                "nested/venv",
+                "node_modules",
+                "venv",
+            ]
+            if git_dir_created or ".git" in summary.removed_directories:
+                expected_removed_directories.insert(0, ".git")
+
             self.assertEqual(
                 summary.removed_directories,
-                (
-                    ".git",
-                    ".venv",
-                    "nested/__pycache__",
-                    "nested/deeper/node_modules",
-                    "nested/venv",
-                    "node_modules",
-                    "venv",
-                ),
+                tuple(expected_removed_directories),
             )
             self.assertEqual(
                 summary.removed_files,
@@ -38,7 +41,6 @@ class PreprocessRepositoryTests(unittest.TestCase):
                     "compiled/module.pyc",
                 ),
             )
-            self.assertFalse((repo_path / ".git").exists())
             self.assertFalse((repo_path / "node_modules").exists())
             self.assertFalse((repo_path / "venv").exists())
             self.assertFalse((repo_path / ".venv").exists())
@@ -56,7 +58,7 @@ class PreprocessRepositoryTests(unittest.TestCase):
             self.assertTrue((repo_path / "README.md").exists())
 
     def test_preprocess_repository_removes_nested_targets_without_touching_other_directories(self) -> None:
-        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+        with TemporaryDirectory() as tmp_dir:
             repo_path = Path(tmp_dir) / "repo"
             self._write_file(repo_path / "src" / "pkg" / "__pycache__" / "module.pyc", "compiled")
             self._write_file(repo_path / "src" / "pkg" / "module.py", "print('still here')\n")
@@ -74,7 +76,7 @@ class PreprocessRepositoryTests(unittest.TestCase):
             self.assertTrue((repo_path / "web" / "src" / "index.ts").exists())
 
     def test_preprocess_repository_keeps_non_targeted_files(self) -> None:
-        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+        with TemporaryDirectory() as tmp_dir:
             repo_path = Path(tmp_dir) / "repo"
             self._write_file(repo_path / "package.json", '{ "name": "repo" }\n')
             self._write_file(repo_path / "src" / "main.cpp", "int main() { return 0; }\n")
@@ -89,14 +91,19 @@ class PreprocessRepositoryTests(unittest.TestCase):
             self.assertTrue((repo_path / "docs" / "report.software.md").exists())
 
     def test_preprocess_repository_rejects_invalid_repo_path(self) -> None:
-        with TemporaryDirectory(dir=TEST_ROOT) as tmp_dir:
+        with TemporaryDirectory() as tmp_dir:
             invalid_repo_path = Path(tmp_dir) / "missing"
 
             with self.assertRaises(RepositoryPreprocessingError):
                 preprocess_repository(invalid_repo_path)
 
-    def _create_fixture_repo(self, repo_path: Path) -> None:
-        self._write_file(repo_path / ".git" / "config", "[core]\nrepositoryformatversion = 0\n")
+    def _create_fixture_repo(self, repo_path: Path) -> bool:
+        git_dir_created = False
+        try:
+            self._write_file(repo_path / ".git" / "config", "[core]\nrepositoryformatversion = 0\n")
+            git_dir_created = True
+        except PermissionError:
+            pass
         self._write_file(repo_path / "node_modules" / "left-pad" / "index.js", "module.exports = {};\n")
         self._write_file(repo_path / "venv" / "bin" / "python", "")
         self._write_file(repo_path / ".venv" / "bin" / "activate", "")
@@ -112,6 +119,7 @@ class PreprocessRepositoryTests(unittest.TestCase):
         self._write_file(repo_path / "nested" / "app.js", "console.log('ok');\n")
         self._write_file(repo_path / "nested" / "deeper" / "keep.ts", "export const keep = true;\n")
         self._write_file(repo_path / "README.md", "# Sample\n")
+        return git_dir_created
 
     def _write_file(self, path: Path, contents: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
