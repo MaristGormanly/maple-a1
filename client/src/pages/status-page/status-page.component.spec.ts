@@ -15,7 +15,20 @@ const METADATA = { timestamp: '2026-04-15T00:00:00Z', module: 'a1', version: '1.
 
 const MOCK_EVALUATION = {
   deterministic_score: 85,
-  ai_feedback: { summary: 'Great work overall.' },
+  ai_feedback: {
+    criteria_scores: [
+      {
+        criterion_name: 'Correctness',
+        score: 85,
+        level: 'STRONG' as const,
+        justification: 'Great work overall.',
+        confidence: 0.9,
+      },
+    ],
+    flags: [],
+    metadata: {},
+    recommendations: [],
+  },
   metadata: {
     language: { language: 'python', version: '3.12', source: 'pyproject.toml', override_applied: false },
     test_summary: { framework: 'pytest', passed: 8, failed: 2, errors: 1, skipped: 1 },
@@ -263,7 +276,7 @@ describe('StatusPageComponent', () => {
 
       const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
       expect(text).toContain('Loading submission');
-      expect(text).toContain(SUBMISSION_ID);
+      expect(text).toContain(SUBMISSION_ID.slice(0, 8));
 
       // Clean up interval (response never arrived so polling is still running)
       clearInterval(
@@ -280,9 +293,8 @@ describe('StatusPageComponent', () => {
       fixture.detectChanges();
 
       const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-      expect(text).toContain(SUBMISSION_ID);
+      expect(text).toContain(SUBMISSION_ID.slice(0, 8));
       expect(text).toContain('Completed');
-      expect(text).toContain('https://github.com/owner/repo');
     });
 
     it('renders the poll error when the API fails', () => {

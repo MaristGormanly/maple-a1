@@ -53,11 +53,12 @@ STYLE_SEVERITIES: Final[tuple[str, ...]] = (
 # Score levels for Pass 3 ``criteria_scores`` entries.  These mirror the
 # rubric vocabulary used elsewhere in the system.
 SCORE_LEVELS: Final[tuple[str, ...]] = (
-    "Exemplary",
-    "Proficient",
-    "Developing",
-    "Beginning",
     "NEEDS_HUMAN_REVIEW",
+    "NEEDS_IMPROVEMENT",
+    "WEAK",
+    "ACCEPTABLE",
+    "STRONG",
+    "EXEMPLARY",
 )
 
 # Recognized values for the ``flags`` array on the final envelope.

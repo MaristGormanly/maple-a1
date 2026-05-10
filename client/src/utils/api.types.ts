@@ -31,11 +31,12 @@ export interface LanguageInfo {
 }
 
 export type ScoreLevel =
-  | 'Exemplary'
-  | 'Proficient'
-  | 'Developing'
-  | 'Beginning'
-  | 'NEEDS_HUMAN_REVIEW';
+  | 'NEEDS_HUMAN_REVIEW'
+  | 'NEEDS_IMPROVEMENT'
+  | 'WEAK'
+  | 'ACCEPTABLE'
+  | 'STRONG'
+  | 'EXEMPLARY';
 
 export interface RecommendationObject {
   file_path: string;
@@ -50,6 +51,8 @@ export interface CriterionScore {
   criterion_name: string;
   score: number;
   level: ScoreLevel;
+  rubric_standard?: string;
+  rubric_weight?: string;
   justification: string;
   confidence: number;
   recommendation?: RecommendationObject;

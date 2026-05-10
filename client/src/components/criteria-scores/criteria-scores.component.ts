@@ -12,24 +12,28 @@ export class CriteriaScoresComponent {
   @Input() criteriaScores: CriterionScore[] = [];
   @Input() rubricCriteria: RubricCriterion[] = [];
 
-  guidelineFor(c: CriterionScore): string | null {
-    const criterion = this.rubricCriteria.find(r => r.name === c.criterion_name);
-    if (!criterion) return null;
-    const level = criterion.levels.find(l => l.label === c.level);
-    return level?.description ?? null;
-  }
-
   badgeTone(level: string): string {
     const map: Record<string, string> = {
-      Exemplary: 'green', Proficient: 'green',
-      Developing: 'amber', Beginning: 'red',
+      EXEMPLARY: 'green',
+      STRONG: 'green',
+      ACCEPTABLE: 'amber',
+      WEAK: 'amber',
+      NEEDS_IMPROVEMENT: 'red',
       NEEDS_HUMAN_REVIEW: 'amber',
     };
     return map[level] ?? 'neutral';
   }
 
   levelLabel(level: string): string {
-    return level === 'NEEDS_HUMAN_REVIEW' ? 'Needs Review' : level;
+    const map: Record<string, string> = {
+      NEEDS_HUMAN_REVIEW: 'Needs Review',
+      NEEDS_IMPROVEMENT: 'Needs Improvement',
+      WEAK: 'Weak',
+      ACCEPTABLE: 'Acceptable',
+      STRONG: 'Strong',
+      EXEMPLARY: 'Exemplary',
+    };
+    return map[level] ?? level;
   }
 
   confidencePct(confidence: number): number {

@@ -49,9 +49,19 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   reviewError: string | null = null;
   reviewRecorded = false;
 
-  readonly scoreLevels: ScoreLevel[] = ['Exemplary', 'Proficient', 'Developing', 'Beginning'];
-  readonly levelScores: Record<string, number> = {
-    Exemplary: 100, Proficient: 75, Developing: 50, Beginning: 25,
+  readonly scoreLevels: ScoreLevel[] = [
+    'NEEDS_IMPROVEMENT',
+    'WEAK',
+    'ACCEPTABLE',
+    'STRONG',
+    'EXEMPLARY',
+  ];
+  readonly levelScores: Partial<Record<ScoreLevel, number>> = {
+    NEEDS_IMPROVEMENT: 50,
+    WEAK: 62.5,
+    ACCEPTABLE: 75,
+    STRONG: 87.5,
+    EXEMPLARY: 100,
   };
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -275,12 +285,16 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
   abbrev(value: string): string { return value.slice(0, 12); }
 
+  scoreForLevel(level: string): number | null {
+    return this.levelScores[level as ScoreLevel] ?? null;
+  }
+
   onApprove(): void { this.submitReview({ action: 'approve' }); }
 
   onOverrideOpen(): void {
     this.overrideRows = this.criteriaScores.map(c => ({
       criterion_name: c.criterion_name,
-      level: (c.level === 'NEEDS_HUMAN_REVIEW' ? 'Developing' : c.level) as ScoreLevel,
+      level: (c.level === 'NEEDS_HUMAN_REVIEW' ? 'ACCEPTABLE' : c.level) as ScoreLevel,
       score: c.score,
     }));
     this.overrideStudentComment = '';

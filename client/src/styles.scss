@@ -597,6 +597,10 @@ input, textarea, select { font-family: inherit; font-size: inherit; color: inher
 .criterion__score { font-family: var(--font-serif); font-weight: 600; font-size: 22px; color: var(--ink); letter-spacing: -0.02em; }
 .criterion__score small { font-size: 12px; color: var(--ink-4); font-weight: 500; font-family: var(--font-sans); }
 .criterion__just { font-size: 14px; color: var(--ink-2); line-height: 1.55; font-family: var(--font-serif); margin: 0; }
+.criterion__standard { padding: 10px 12px; border-radius: 6px; background: var(--bg-subtle); border-left: 3px solid var(--border-strong); }
+.criterion__standard-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-family: var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+.criterion__standard-label span { color: var(--coral); }
+.criterion__standard p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); font-family: var(--font-serif); }
 .conf-row { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-3); }
 .conf-row__label { flex: 0 0 80px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
 .conf-track { flex: 1; height: 3px; background: var(--bg-sunken); border-radius: 999px; overflow: hidden; }

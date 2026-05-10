@@ -408,9 +408,115 @@ async def run_pipeline(
 def _normalize_criteria_scores(envelope: dict) -> None:
     """Convert LLM 1-5 ordinal scores to 0-100: 50 + (score - 1) * 12.5."""
     for criterion in envelope.get("criteria_scores") or []:
+        if not isinstance(criterion, dict):
+            continue
+        if "criterion_name" not in criterion and criterion.get("name"):
+            criterion["criterion_name"] = criterion["name"]
         raw = criterion.get("score")
         if isinstance(raw, (int, float)) and 1 <= raw <= 5:
             criterion["score"] = round(50 + (raw - 1) * 12.5, 2)
+
+
+_LEVEL_TO_NUMERIC_STANDARD: dict[str, str] = {
+    "NEEDS_IMPROVEMENT": "1",
+    "WEAK": "2",
+    "ACCEPTABLE": "3",
+    "STRONG": "4",
+    "EXEMPLARY": "5",
+}
+
+
+def _normalize_text_key(value: object) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _extract_rubric_standard_index(rubric_content: object) -> dict[str, dict[str, Any]]:
+    """Return rubric standards keyed by normalized criterion/category name."""
+    if not isinstance(rubric_content, dict):
+        return {}
+
+    index: dict[str, dict[str, Any]] = {}
+
+    canonical_criteria = rubric_content.get("criteria")
+    if isinstance(canonical_criteria, list):
+        for criterion in canonical_criteria:
+            if not isinstance(criterion, dict):
+                continue
+            name = criterion.get("name")
+            key = _normalize_text_key(name)
+            if not key:
+                continue
+            levels: dict[str, str] = {}
+            raw_levels = criterion.get("levels")
+            if isinstance(raw_levels, list):
+                for level in raw_levels:
+                    if not isinstance(level, dict):
+                        continue
+                    label = level.get("label")
+                    description = level.get("description")
+                    if label is not None and isinstance(description, str):
+                        levels[str(label)] = description
+            index[key] = {
+                "name": str(name),
+                "weight": criterion.get("weight"),
+                "levels": levels,
+            }
+
+    segments = rubric_content.get("segments")
+    if isinstance(segments, list):
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            category = segment.get("category")
+            key = _normalize_text_key(category)
+            criteria = segment.get("criteria")
+            if not key or not isinstance(criteria, dict):
+                continue
+            levels = {
+                str(label): description
+                for label, description in criteria.items()
+                if isinstance(description, str)
+            }
+            index[key] = {
+                "name": str(category),
+                "weight": segment.get("weight"),
+                "levels": levels,
+            }
+
+    return index
+
+
+def _level_standard_key(level: object) -> str | None:
+    if not isinstance(level, str):
+        return None
+    return _LEVEL_TO_NUMERIC_STANDARD.get(level) or level
+
+
+def _attach_rubric_standards(envelope: dict, rubric_content: object) -> None:
+    """Attach the matched instructor rubric standard to each final criterion."""
+    standards = _extract_rubric_standard_index(rubric_content)
+    if not standards:
+        return
+
+    for criterion in envelope.get("criteria_scores") or []:
+        if not isinstance(criterion, dict):
+            continue
+        criterion_name = criterion.get("criterion_name") or criterion.get("name")
+        criterion["criterion_name"] = criterion_name
+        standard = standards.get(_normalize_text_key(criterion_name))
+        if not standard:
+            continue
+        level_key = _level_standard_key(criterion.get("level"))
+        if level_key is None:
+            continue
+        description = standard["levels"].get(level_key)
+        if description is None:
+            description = standard["levels"].get(str(criterion.get("level")))
+        if isinstance(description, str) and description:
+            criterion["rubric_standard"] = description
+        weight = standard.get("weight")
+        if isinstance(weight, str) and weight:
+            criterion["rubric_weight"] = weight
 
 
 async def _run_evaluating_phase(
@@ -543,6 +649,7 @@ async def _run_evaluating_phase(
             code_chunks=code_chunks,
         )
         _normalize_criteria_scores(envelope)
+        _attach_rubric_standards(envelope, rubric_content)
         # region agent log
         _dlog(
             location="pipeline.py:_run_evaluating_phase:pass3_done",

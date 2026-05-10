@@ -161,7 +161,7 @@ class NoTransientCompletedStatusTests(unittest.TestCase):
                 {
                     "name": "Correctness",
                     "score": 90,
-                    "level": "Proficient",
+                    "level": "STRONG",
                     "justification": "ok",
                     "confidence": 0.9,
                 }

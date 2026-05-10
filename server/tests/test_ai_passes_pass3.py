@@ -80,7 +80,7 @@ _VALID_ENVELOPE: dict = {
         {
             "name": "Correctness",
             "score": 80,
-            "level": "Proficient",
+            "level": "STRONG",
             "justification": "Most tests pass; one logic bug remains.",
             "confidence": 0.85,
             "recommendations": [_VALID_RECOMMENDATION],
@@ -88,7 +88,7 @@ _VALID_ENVELOPE: dict = {
         {
             "name": "Style",
             "score": 70,
-            "level": "Developing",
+            "level": "ACCEPTABLE",
             "justification": "Minor PEP8 issues.",
             "confidence": 0.75,
         },

@@ -30,7 +30,7 @@ from typing import Iterable
 
 # Confidence below this threshold on any criterion triggers
 # ``NEEDS_HUMAN_REVIEW``.  0.6 chosen as a conservative default that
-# still admits "Proficient with caveats"; production may override.
+# still admits strong-but-caveated scores; production may override.
 DEFAULT_LOW_CONFIDENCE_THRESHOLD: float = 0.6
 
 # Languages with curated style-guide RAG corpora per design-doc §3 §II.

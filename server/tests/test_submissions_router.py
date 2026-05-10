@@ -248,7 +248,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                     {
                         "name": "Correctness",
                         "score": 80,
-                        "level": "Proficient",
+                        "level": "STRONG",
                         "justification": "ok",
                         "confidence": 0.9,
                         "recommendations": [rec_a, rec_b],
@@ -256,7 +256,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                     {
                         "name": "Style",
                         "score": 70,
-                        "level": "Developing",
+                        "level": "ACCEPTABLE",
                         "justification": "naming",
                         "confidence": 0.7,
                         "recommendations": [rec_c],
@@ -304,7 +304,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                     {
                         "name": "Correctness",
                         "score": 90,
-                        "level": "Exemplary",
+                        "level": "EXEMPLARY",
                         "justification": "ok",
                         "confidence": 0.95,
                         "recommendation": rec,
@@ -342,7 +342,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                     {
                         "name": "Correctness",
                         "score": 80,
-                        "level": "Proficient",
+                        "level": "STRONG",
                         "justification": "ok",
                         "confidence": 0.9,
                         "recommendations": [self._rec("a.py", 1)],

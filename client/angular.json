@@ -81,7 +81,9 @@
           "options": {
             "runner": "vitest",
             "tsConfig": "tsconfig.spec.json",
-            "setupFile": "src/test-setup.ts"
+            "setupFiles": [
+              "src/test-setup.ts"
+            ]
           }
         }
       }

@@ -90,9 +90,9 @@
               <td style="padding:10px 18px">{{ g.criterion_name }}</td>
               <td style="padding:10px 18px">
                 <span class="badge"
-                  [class.badge--green]="g.level === 'Exemplary' || g.level === 'Proficient'"
-                  [class.badge--amber]="g.level === 'Developing'"
-                  [class.badge--red]="g.level === 'Beginning'">
+                  [class.badge--green]="g.level === 'EXEMPLARY' || g.level === 'STRONG'"
+                  [class.badge--amber]="g.level === 'ACCEPTABLE' || g.level === 'WEAK'"
+                  [class.badge--red]="g.level === 'NEEDS_IMPROVEMENT'">
                   {{ g.level }}
                 </span>
               </td>
@@ -156,7 +156,7 @@
                 <td style="padding:8px 12px">
                   <select class="select" style="font-size:13px;padding:4px 8px"
                     [(ngModel)]="row.level"
-                    (ngModelChange)="row.score = levelScores[$event] ?? row.score">
+                    (ngModelChange)="row.score = scoreForLevel($event) ?? row.score">
                     @for (lvl of scoreLevels; track lvl) {
                     <option [value]="lvl">{{ lvl }}</option>
                     }
@@ -174,7 +174,7 @@
           <label class="field__label">Comment for student</label>
           <span class="field__hint">Visible to the student alongside the adjusted grades.</span>
           <textarea class="textarea" rows="3"
-            placeholder="e.g. Edge case handling was marked Proficient by AI but the empty-root case was missed — adjusted to Developing."
+            placeholder="e.g. Edge case handling was marked STRONG by AI but the empty-root case was missed — adjusted to ACCEPTABLE."
             [(ngModel)]="overrideStudentComment"></textarea>
         </div>
 
