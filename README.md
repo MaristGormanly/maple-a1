@@ -27,7 +27,7 @@ This module combines deterministic test execution with a Retrieval-Augmented Gen
 * Node.js (v18+)
 * PostgreSQL 16 with the `pgvector` extension installed and running
 * Docker (for sandboxed test execution)
-* A GitHub Personal Access Token with `repo` scope
+* A GitHub Personal Access Token with private repo read access, configured after login in **Settings → GitHub Connections**
 
 ### 2. Environment Configuration
 
@@ -37,7 +37,7 @@ Copy the environment template and fill in your credentials:
 cp .env.example .env
 ```
 
-Required variables: `DATABASE_URL`, `SECRET_KEY`, `GITHUB_PAT`. Optional: `GEMINI_API_KEY`, `OPENAI_API_KEY` (Milestone 3 AI passes), `CORS_ORIGINS` (default `http://localhost:4200`).
+Required variables: `DATABASE_URL`, `SECRET_KEY`, `GITHUB_TOKEN_ENCRYPTION_KEY`. Optional: `GEMINI_API_KEY`, `OPENAI_API_KEY` (Milestone 3 AI passes), `CORS_ORIGINS` (default `http://localhost:4200`). Instructor GitHub PATs are saved per account in the app, not in `.env`.
 
 ### 3. Initialize the Database
 

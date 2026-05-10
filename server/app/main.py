@@ -6,6 +6,7 @@ import re
 import shutil
 import sys
 import uuid
+from inspect import isawaitable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,14 +34,15 @@ from .cache import (
     save_repository_cache_entry,
 )
 
-from .config import get_required_github_pat, settings
+from .config import settings
 from .middleware.auth import get_current_user
 from .middleware.rate_limit import install_rate_limiting, limiter
 from .models.database import get_db
 from .preprocessing import RepositoryPreprocessingError, preprocess_repository
-from .routers import assignments, auth, rubrics, submissions
+from .routers import assignments, auth, rubrics, settings as settings_router, submissions
 from .services.assignments import parse_assignment_id, validate_assignment_exists
 from .services.git_ingest import CloneError, clone_repository
+from .services.github_settings import GitHubSettingsError, get_required_github_pat_for_instructor
 from .services.llm import redact
 from .services.pipeline import run_pipeline
 # region agent log
@@ -62,6 +64,10 @@ class MapleAPIError(Exception):
         self.code = code
         self.message = message
         super().__init__(message)
+
+
+def get_required_github_pat(db: AsyncSession, instructor_id: UUID):
+    return get_required_github_pat_for_instructor(db, instructor_id)
 
 
 def sanitize_clone_path_segment(value: str) -> str:
@@ -225,7 +231,7 @@ async def validate_github_repo_access(
         raise MapleAPIError(
             status_code=401,
             code="AUTHENTICATION_ERROR",
-            message="GITHUB_PAT is invalid or expired.",
+            message="Saved GitHub token is invalid or expired.",
         )
 
     if response.status_code == 403:
@@ -239,14 +245,14 @@ async def validate_github_repo_access(
         raise MapleAPIError(
             status_code=400,
             code="VALIDATION_ERROR",
-            message="Repository not found or inaccessible with the current GITHUB_PAT.",
+            message="Repository not found or inaccessible with the saved GitHub token.",
         )
 
     if response.status_code == 404:
         raise MapleAPIError(
             status_code=400,
             code="VALIDATION_ERROR",
-            message="Repository not found or inaccessible with the current GITHUB_PAT.",
+            message="Repository not found or inaccessible with the saved GitHub token.",
         )
 
     if response.status_code != 200:
@@ -320,7 +326,7 @@ async def resolve_repository_head_commit_hash(
         raise MapleAPIError(
             status_code=401,
             code="AUTHENTICATION_ERROR",
-            message="GITHUB_PAT is invalid or expired.",
+            message="Saved GitHub token is invalid or expired.",
         )
 
     if response.status_code in {403, 404}:
@@ -392,6 +398,7 @@ install_rate_limiting(
 app.include_router(auth.router, prefix="/api/v1/code-eval")
 app.include_router(assignments.router, prefix="/api/v1/code-eval")
 app.include_router(rubrics.router, prefix="/api/v1/code-eval")
+app.include_router(settings_router.router, prefix="/api/v1/code-eval")
 app.include_router(submissions.router, prefix="/api/v1/code-eval")
 
 @app.exception_handler(RequestValidationError)
@@ -517,7 +524,10 @@ async def evaluate_submission(
             )
 
     try:
-        github_pat = get_required_github_pat()
+        github_pat_result = get_required_github_pat(db, student_id)
+        github_pat = await github_pat_result if isawaitable(github_pat_result) else github_pat_result
+    except GitHubSettingsError as exc:
+        raise MapleAPIError(exc.status_code, exc.code, exc.message) from exc
     except RuntimeError as exc:
         raise MapleAPIError(
             status_code=500,

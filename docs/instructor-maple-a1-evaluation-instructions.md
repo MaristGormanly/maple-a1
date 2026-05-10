@@ -41,15 +41,9 @@ gh api /user/repository_invitations --jq '.[].id' | \
 
 ---
 
-## 3. Install the PAT on the A1 server
+## 3. Save the PAT in A1 settings
 
-On the DigitalOcean Droplet:
-
-```bash
-sudo -e /opt/maple-a1/.env
-# set: GITHUB_PAT=github_pat_xxxxxxxxxxxxxxxxxxxx
-sudo systemctl restart maple-a1
-```
+In A1, open **Settings → GitHub Connections**, enter your GitHub username and paste the PAT, then choose **Save connection**. A1 validates the token with GitHub and stores only encrypted token data server-side. The saved PAT is never shown again in the browser.
 
 Verify by submitting one known-good student repo URL; expect `status: "cloned"` in the response. A `401 AUTHENTICATION_ERROR` means either the PAT lacks scope for that repo or the collaborator invite wasn't accepted.
 
@@ -81,5 +75,5 @@ If a student forgets to add the instructor:
 ## Related documentation
 
 - [`design-doc.md`](./design-doc.md) — full system architecture and MVP scope notes
-- [`deployment.md`](./deployment.md) — server environment variables, including `GITHUB_PAT`
+- [`deployment.md`](./deployment.md) — server environment variables, including `GITHUB_TOKEN_ENCRYPTION_KEY`
 - [`api-spec.md`](./api-spec.md) — `POST /evaluate` request/response contract and error codes

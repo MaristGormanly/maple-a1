@@ -192,3 +192,16 @@ export interface DeleteResponse {
   error: ApiError | null;
   metadata: ResponseMetadata;
 }
+
+export interface GitHubSettingsData {
+  connected: boolean;
+  github_username: string | null;
+  last_updated_at: string | null;
+}
+
+export interface GitHubSettingsResponse {
+  success: boolean;
+  data: GitHubSettingsData | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}

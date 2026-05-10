@@ -352,7 +352,7 @@ The app is configured with a **`.env`** file. Values must **never** be committed
 | `DATABASE_*` / `DATABASE_URL` | PostgreSQL (use a **local** database for development) |
 | `APP_ENV`, `APP_HOST`, `APP_PORT` | Application environment and server binding |
 | `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT signing and token lifetime |
-| `GITHUB_PAT` | GitHub Personal Access Token — minimum scope: **`repo`** (private read). Used for both student-repo cloning and instructor test-suite cloning. Recommended owner: a service account or instructor account with access to private test-suite repos. If the PAT lacks sufficient scope, test-suite clones fail safely (submission → `Failed`, no credential leakage). |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | Fernet key used to encrypt instructor GitHub PATs stored in the database. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Instructor PATs are entered in the app under **Settings → GitHub Connections**, not stored in `.env`. |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | LLM provider keys (placeholders until Milestone 3) |
 | `CORS_ORIGINS` | Allowed CORS origins for the frontend |
 

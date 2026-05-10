@@ -16,7 +16,7 @@ from app.config import Settings
 REQUIRED = {
     "DATABASE_URL": "postgresql+asyncpg://u:p@localhost/t",
     "SECRET_KEY": "dummy-secret",
-    "GITHUB_PAT": "ghp_dummyplaceholder",
+    "GITHUB_TOKEN_ENCRYPTION_KEY": "dGhpc19pc19hXzMyX2J5dGVfZGV2X3Rlc3Rfa2V5ISE=",
 }
 
 
