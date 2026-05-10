@@ -47,15 +47,26 @@ export interface RecommendationObject {
   rationale?: string;
 }
 
+export interface CriterionReasoningDetails {
+  score_reasoning: string;
+  confidence_reasoning: string;
+  evidence: string;
+  uncertainty: string;
+  limitations: string;
+}
+
 export interface CriterionScore {
   criterion_name: string;
+  name?: string;
   score: number;
   level: ScoreLevel;
   rubric_standard?: string;
   rubric_weight?: string;
   justification: string;
   confidence: number;
+  reasoning_details?: CriterionReasoningDetails;
   recommendation?: RecommendationObject;
+  recommendations?: RecommendationObject[];
 }
 
 export interface AiFeedback {

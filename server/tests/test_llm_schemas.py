@@ -45,6 +45,14 @@ _VALID_RECOMMENDATION: dict = {
     "rationale": "The implementation subtracted instead of added.",
 }
 
+_VALID_REASONING_DETAILS: dict = {
+    "score_reasoning": "The score reflects mostly passing tests with a few edge cases unresolved.",
+    "confidence_reasoning": "Confidence is high because test results and rubric criteria align.",
+    "evidence": "Rubric criteria, unit test outcomes, and Pass 1 failure classification.",
+    "uncertainty": "The failing edge cases do not include full stack traces.",
+    "limitations": "No claims are made about behavior outside the provided tests and code evidence.",
+}
+
 
 _VALID_PASS1: dict = {
     "pass": "pass1",
@@ -99,6 +107,7 @@ _VALID_PASS3: dict = {
             "level": "STRONG",
             "justification": "12/14 unit tests pass; remaining failures are edge cases.",
             "confidence": 0.88,
+            "reasoning_details": _VALID_REASONING_DETAILS,
             "recommendations": [_VALID_RECOMMENDATION],
             "flags": [],
         },
@@ -108,6 +117,7 @@ _VALID_PASS3: dict = {
             "level": "ACCEPTABLE",
             "justification": "Several PEP8 line-length violations remain.",
             "confidence": 0.75,
+            "reasoning_details": _VALID_REASONING_DETAILS,
         },
     ],
     "deterministic_score": 85.7,
@@ -220,6 +230,18 @@ class Pass3SchemaTests(unittest.TestCase):
     def test_confidence_out_of_range_rejected(self) -> None:
         bad = copy.deepcopy(_VALID_PASS3)
         bad["criteria_scores"][0]["confidence"] = 1.5
+        with self.assertRaises(ValidationError):
+            self.validator.validate(bad)
+
+    def test_missing_reasoning_details_rejected(self) -> None:
+        bad = copy.deepcopy(_VALID_PASS3)
+        bad["criteria_scores"][0].pop("reasoning_details")
+        with self.assertRaises(ValidationError):
+            self.validator.validate(bad)
+
+    def test_reasoning_details_require_all_debug_fields(self) -> None:
+        bad = copy.deepcopy(_VALID_PASS3)
+        bad["criteria_scores"][0]["reasoning_details"].pop("confidence_reasoning")
         with self.assertRaises(ValidationError):
             self.validator.validate(bad)
 

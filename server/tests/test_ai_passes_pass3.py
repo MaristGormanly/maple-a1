@@ -75,6 +75,14 @@ _VALID_RECOMMENDATION: dict = {
     ),
 }
 
+_VALID_REASONING_DETAILS: dict = {
+    "score_reasoning": "The score reflects one remaining correctness issue.",
+    "confidence_reasoning": "Confidence is high because the failing test is specific.",
+    "evidence": "Pass 1 classified tests/test_math.py::test_add as a logic bug.",
+    "uncertainty": "Only the provided tests and code chunks were available.",
+    "limitations": "The rationale does not assess files absent from the evidence payload.",
+}
+
 _VALID_ENVELOPE: dict = {
     "criteria_scores": [
         {
@@ -83,6 +91,7 @@ _VALID_ENVELOPE: dict = {
             "level": "STRONG",
             "justification": "Most tests pass; one logic bug remains.",
             "confidence": 0.85,
+            "reasoning_details": _VALID_REASONING_DETAILS,
             "recommendations": [_VALID_RECOMMENDATION],
         },
         {
@@ -91,6 +100,7 @@ _VALID_ENVELOPE: dict = {
             "level": "ACCEPTABLE",
             "justification": "Minor PEP8 issues.",
             "confidence": 0.75,
+            "reasoning_details": _VALID_REASONING_DETAILS,
         },
     ],
     "deterministic_score": 80.0,
@@ -165,6 +175,7 @@ class Pass3HappyPathTests(unittest.TestCase):
         self.assertIn("pass2_reasoning", user_msg)
         self.assertIn("Style and correctness.", user_msg)
         self.assertIn("MAPLE Standard Response Envelope", user_msg)
+        self.assertIn("reasoning_details", user_msg)
 
     def test_works_when_pass2_skipped(self) -> None:
         mock_complete = AsyncMock(return_value=_ok_response(json.dumps(_VALID_ENVELOPE)))

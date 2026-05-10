@@ -664,7 +664,9 @@ PASS3_TEMPERATURE: float = 0.2
 _PASS3_SPECIFIC_PROMPT: str = (
     "You are producing the final grading object.\n"
     "Merge prior pass outputs, preserve uncertainty flags, and provide concise pedagogical justifications.\n"
-    "Only emit a RecommendationObject when an exact file path, line range, and code snippet are present in evidence."
+    "Only emit a RecommendationObject when an exact file path, line range, and code snippet are present in evidence.\n"
+    "For each criterion, include instructor-facing reasoning_details that explain the score, confidence, "
+    "evidence used, uncertainty, and limitations without revealing hidden chain-of-thought."
 )
 
 PASS3_SYSTEM_PROMPT: str = f"{_BASE_SYSTEM_PROMPT}\n\n{_PASS3_SPECIFIC_PROMPT}"
@@ -675,7 +677,9 @@ PASS3_REPAIR_PROMPT: str = (
     "deterministic_score (number 0-100 or null), metadata (object), flags (array of strings).\n"
     "Each criterion requires name, score (0-100), level "
     "(NEEDS_HUMAN_REVIEW|NEEDS_IMPROVEMENT|WEAK|ACCEPTABLE|STRONG|EXEMPLARY), justification, "
-    "and confidence (0.0-1.0).\n"
+    "confidence (0.0-1.0), and reasoning_details.\n"
+    "reasoning_details must be an object with non-empty string fields: score_reasoning, "
+    "confidence_reasoning, evidence, uncertainty, and limitations.\n"
     "Recommendations require file_path, line_range, original_snippet, revised_snippet, "
     "and a Git-style diff.\n"
     "All line numbers must be integers ≥ 1 (1-based). Use 1 if the exact line is unknown."
@@ -721,7 +725,11 @@ def _build_pass3_user_message(
         "For every rubric criterion scoring below 'EXEMPLARY', emit a "
         "RecommendationObject ONLY when an exact file path, line range, and "
         "code snippet are present in evidence. Preserve uncertainty flags from "
-        "earlier passes (e.g. NEEDS_HUMAN_REVIEW). Return JSON conforming to "
+        "earlier passes (e.g. NEEDS_HUMAN_REVIEW). For each criterion, include "
+        "reasoning_details with score_reasoning, confidence_reasoning, evidence, "
+        "uncertainty, and limitations. These details should be complete enough "
+        "for an instructor to audit the grade, but must be evidence-grounded "
+        "and must not expose hidden chain-of-thought. Return JSON conforming to "
         "the Pass 3 schema."
     )
 

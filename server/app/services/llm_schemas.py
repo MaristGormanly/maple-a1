@@ -218,10 +218,36 @@ PASS2_OUTPUT_SCHEMA: Final[dict] = {
 # Pass 3 — Synthesis (MAPLE Standard Response Envelope)
 # ---------------------------------------------------------------------------
 
+CRITERION_REASONING_DETAILS_SCHEMA: Final[dict] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "score_reasoning",
+        "confidence_reasoning",
+        "evidence",
+        "uncertainty",
+        "limitations",
+    ],
+    "properties": {
+        "score_reasoning": {"type": "string", "minLength": 1},
+        "confidence_reasoning": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1},
+        "uncertainty": {"type": "string", "minLength": 1},
+        "limitations": {"type": "string", "minLength": 1},
+    },
+}
+
 CRITERIA_SCORE_SCHEMA: Final[dict] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["name", "score", "level", "justification", "confidence"],
+    "required": [
+        "name",
+        "score",
+        "level",
+        "justification",
+        "confidence",
+        "reasoning_details",
+    ],
     "properties": {
         "name": {"type": "string", "minLength": 1},
         # 0-100 point scale per design-doc §4.
@@ -229,6 +255,7 @@ CRITERIA_SCORE_SCHEMA: Final[dict] = {
         "level": {"type": "string", "enum": list(SCORE_LEVELS)},
         "justification": {"type": "string", "minLength": 1},
         "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "reasoning_details": CRITERION_REASONING_DETAILS_SCHEMA,
         # Recommendations are optional per criterion and only emitted
         # when an exact file path, line range, and snippet are present
         # in evidence (design-doc §4).
