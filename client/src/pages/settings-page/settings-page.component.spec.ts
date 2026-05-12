@@ -3,7 +3,7 @@ import { of } from 'rxjs';
 
 import { SettingsPageComponent } from './settings-page.component';
 import { SettingsService } from '../../services/settings.service';
-import { GitHubSettingsResponse } from '../../utils/api.types';
+import { GitHubSettingsResponse, StyleGuideReferencesResponse } from '../../utils/api.types';
 
 const METADATA = { timestamp: '2026-05-09T00:00:00Z', module: 'a1', version: '1.0.0' };
 
@@ -23,9 +23,29 @@ function githubResponse(
   };
 }
 
+function styleGuideReferencesResponse(
+  references: NonNullable<StyleGuideReferencesResponse['data']>['references'] = [
+    {
+      title: 'PEP 8 — Style Guide for Python Code',
+      document_url: 'https://peps.python.org/pep-0008/',
+      language: 'python',
+      version: '2024-06-01',
+      date_created: '2026-05-12T14:30:00Z',
+    },
+  ],
+): StyleGuideReferencesResponse {
+  return {
+    success: true,
+    error: null,
+    metadata: METADATA,
+    data: { references },
+  };
+}
+
 describe('SettingsPageComponent', () => {
   let settingsService: {
     getGitHubSettings: ReturnType<typeof vi.fn>;
+    getStyleGuideReferences: ReturnType<typeof vi.fn>;
     saveGitHubSettings: ReturnType<typeof vi.fn>;
     clearGitHubSettings: ReturnType<typeof vi.fn>;
   };
@@ -33,6 +53,7 @@ describe('SettingsPageComponent', () => {
   beforeEach(async () => {
     settingsService = {
       getGitHubSettings: vi.fn(),
+      getStyleGuideReferences: vi.fn(),
       saveGitHubSettings: vi.fn(),
       clearGitHubSettings: vi.fn(),
     };
@@ -47,8 +68,12 @@ describe('SettingsPageComponent', () => {
     vi.restoreAllMocks();
   });
 
-  function setup(initialResponse: GitHubSettingsResponse) {
+  function setup(
+    initialResponse: GitHubSettingsResponse,
+    referencesResponse: StyleGuideReferencesResponse = styleGuideReferencesResponse(),
+  ) {
     settingsService.getGitHubSettings.mockReturnValue(of(initialResponse));
+    settingsService.getStyleGuideReferences.mockReturnValue(of(referencesResponse));
     const fixture = TestBed.createComponent(SettingsPageComponent);
     fixture.detectChanges();
     return { fixture, component: fixture.componentInstance };
@@ -119,5 +144,36 @@ describe('SettingsPageComponent', () => {
     expect(host.textContent).toContain('Save connection');
     expect(host.textContent).not.toContain('Delete GitHub key');
     expect(host.textContent).toContain('GitHub key deleted.');
+  });
+
+  it('renders style guide references in the adjacent settings tab', () => {
+    const { fixture, component } = setup(githubResponse(true, 'octocat'));
+
+    component.selectTab('style-guides');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const link = host.querySelector<HTMLAnchorElement>('a[href="https://peps.python.org/pep-0008/"]');
+
+    expect(host.textContent).toContain('Style Guide References');
+    expect(host.textContent).toContain('PEP 8 — Style Guide for Python Code');
+    expect(host.textContent).toContain('python');
+    expect(host.textContent).toContain('2024-06-01');
+    expect(link?.textContent).toContain('Open');
+    expect(link?.target).toBe('_blank');
+  });
+
+  it('renders an empty style guide references state', () => {
+    const { fixture, component } = setup(
+      githubResponse(true, 'octocat'),
+      styleGuideReferencesResponse([]),
+    );
+
+    component.selectTab('style-guides');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.textContent).toContain('No references indexed');
+    expect(host.textContent).toContain('Run the style guide ingester before using RAG-backed style review.');
   });
 });

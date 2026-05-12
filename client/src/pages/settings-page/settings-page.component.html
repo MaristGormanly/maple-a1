@@ -56,9 +56,21 @@
       <svg width="16" height="16"><use href="#icon-github" /></svg>
       GitHub Connections
     </button>
+    <button
+      type="button"
+      class="folder-tab"
+      [class.folder-tab--active]="activeTab() === 'style-guides'"
+      (click)="selectTab('style-guides')"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'style-guides'"
+    >
+      <svg width="16" height="16"><use href="#icon-book" /></svg>
+      Style Guide References
+    </button>
   </div>
 
   <section class="folder-panel" role="tabpanel">
+    @if (activeTab() === 'github') {
     @if (loading()) {
     <div class="empty">
       <span class="spinner"></span>
@@ -200,6 +212,74 @@
           </p>
         </div>
       </aside>
+    </div>
+    }
+    } @else {
+    <div>
+      <div class="section-title">
+        <svg width="20" height="20"><use href="#icon-book" /></svg>
+        Style Guide References
+        <span class="section-title__count">
+          {{styleGuideReferences().length}}
+          {{styleGuideReferences().length === 1 ? 'reference' : 'references'}}
+        </span>
+      </div>
+
+      @if (referencesLoading()) {
+      <div class="empty">
+        <span class="spinner"></span>
+        <p>Loading style guide references.</p>
+      </div>
+      } @else if (styleGuideReferences().length === 0) {
+      <div class="empty">
+        <div class="empty__icon">
+          <svg width="24" height="24"><use href="#icon-book" /></svg>
+        </div>
+        <h3>No references indexed</h3>
+        <p>Run the style guide ingester before using RAG-backed style review.</p>
+      </div>
+      } @else {
+      <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th style="width:140px">Language</th>
+              <th style="width:150px">Version</th>
+              <th style="width:210px">Date created</th>
+              <th style="width:120px">Document</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (reference of styleGuideReferences(); track reference.document_url + reference.version) {
+            <tr>
+              <td style="font-weight:600;color:var(--ink)">{{reference.title}}</td>
+              <td class="mono">{{reference.language}}</td>
+              <td class="mono">{{reference.version}}</td>
+              <td class="mono">
+                @if (reference.date_created) {
+                {{reference.date_created | date:'medium'}}
+                } @else {
+                Unknown
+                }
+              </td>
+              <td>
+                <a
+                  class="linkbtn"
+                  [href]="reference.document_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open
+                  <svg width="12" height="12"><use href="#icon-chevron" /></svg>
+                </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
     </div>
     }
   </section>

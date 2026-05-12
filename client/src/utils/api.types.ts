@@ -219,3 +219,18 @@ export interface GitHubSettingsResponse {
   error: ApiError | null;
   metadata: ResponseMetadata;
 }
+
+export interface StyleGuideReference {
+  title: string;
+  document_url: string;
+  language: string;
+  version: string;
+  date_created: string | null;
+}
+
+export interface StyleGuideReferencesResponse {
+  success: boolean;
+  data: { references: StyleGuideReference[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}

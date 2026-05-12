@@ -5,9 +5,9 @@ import { finalize } from 'rxjs';
 
 import { ConfirmDialogComponent } from '../../components/confirm-dialog/confirm-dialog.component';
 import { SettingsService } from '../../services/settings.service';
-import { GitHubSettingsData } from '../../utils/api.types';
+import { GitHubSettingsData, StyleGuideReference } from '../../utils/api.types';
 
-type SettingsTab = 'github';
+type SettingsTab = 'github' | 'style-guides';
 
 @Component({
   selector: 'app-settings-page',
@@ -18,6 +18,7 @@ type SettingsTab = 'github';
 export class SettingsPageComponent implements OnInit {
   activeTab = signal<SettingsTab>('github');
   githubSettings = signal<GitHubSettingsData | null>(null);
+  styleGuideReferences = signal<StyleGuideReference[]>([]);
 
   form = new FormGroup({
     githubUsername: new FormControl('', [Validators.maxLength(120)]),
@@ -25,6 +26,7 @@ export class SettingsPageComponent implements OnInit {
   });
 
   loading = signal(true);
+  referencesLoading = signal(true);
   saving = signal(false);
   clearing = signal(false);
   showDeleteDialog = signal(false);
@@ -35,6 +37,7 @@ export class SettingsPageComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadGitHubSettings();
+    this.loadStyleGuideReferences();
   }
 
   selectTab(tab: SettingsTab): void {
@@ -52,6 +55,21 @@ export class SettingsPageComponent implements OnInit {
           this.applyGitHubSettings(response.data);
         } else {
           this.errorMessage.set(response.error?.message ?? 'Unable to load GitHub settings.');
+        }
+      });
+  }
+
+  loadStyleGuideReferences(): void {
+    this.referencesLoading.set(true);
+    this.settingsService
+      .getStyleGuideReferences()
+      .pipe(finalize(() => this.referencesLoading.set(false)))
+      .subscribe((response) => {
+        if (response.success && response.data) {
+          this.styleGuideReferences.set(response.data.references);
+        } else {
+          this.errorMessage.set(response.error?.message ?? 'Unable to load style guide references.');
+          this.styleGuideReferences.set([]);
         }
       });
   }
