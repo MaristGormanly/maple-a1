@@ -1,17 +1,21 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
 import { finalize } from 'rxjs';
 
 import { EvaluationService } from '../../services/evaluation.service';
+import { RepositoryService } from '../../services/repository.service';
+import { RubricService } from '../../services/rubric.service';
+import { RepositoryItem, RubricListItem } from '../../utils/api.types';
 
 @Component({
   selector: 'app-submit-page',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './submit-page.component.html',
 })
-export class SubmitPageComponent {
+export class SubmitPageComponent implements OnInit {
   @ViewChild('fileInput') fileInputRef!: ElementRef<HTMLInputElement>;
 
   form = new FormGroup({
@@ -34,10 +38,62 @@ export class SubmitPageComponent {
   submitting = false;
   errorMessage: string | null = null;
 
+  readonly urlMode = signal<'manual' | 'picker'>('manual');
+  readonly repos = signal<RepositoryItem[]>([]);
+  readonly reposLoading = signal(false);
+  readonly reposError = signal<string | null>(null);
+
+  // Rubric mode
+  readonly rubricMode = signal<'library' | 'upload'>('upload');
+  readonly savedRubrics = signal<RubricListItem[]>([]);
+  readonly selectedRubricId = signal('');
+  rubricIdError = false;
+
   constructor(
     private evaluationService: EvaluationService,
-    private router: Router
-  ) { }
+    private repositoryService: RepositoryService,
+    private rubricService: RubricService,
+    private router: Router,
+  ) {
+    this.rubricService.getAll().subscribe((res) => {
+      if (res.success && res.data && res.data.rubrics.length > 0) {
+        this.savedRubrics.set(res.data.rubrics);
+        this.selectedRubricId.set(res.data.rubrics[0].rubric_id);
+      }
+    });
+  }
+
+  ngOnInit(): void {
+    const state = history.state as { prefillUrl?: string };
+    if (state?.prefillUrl) {
+      this.form.controls.githubUrl.setValue(state.prefillUrl);
+    }
+  }
+
+  switchMode(mode: 'manual' | 'picker'): void {
+    this.urlMode.set(mode);
+    if (mode === 'picker' && this.repos().length === 0 && !this.reposLoading()) {
+      this.loadRepos();
+    }
+  }
+
+  loadRepos(): void {
+    this.reposLoading.set(true);
+    this.reposError.set(null);
+    this.repositoryService.listRepositories().subscribe(res => {
+      this.reposLoading.set(false);
+      if (res.success && res.data) {
+        this.repos.set(res.data.repositories);
+      } else {
+        this.reposError.set(res.error?.message ?? 'Failed to load repositories.');
+      }
+    });
+  }
+
+  onRepoPicked(event: Event): void {
+    const url = (event.target as HTMLSelectElement).value;
+    this.form.controls.githubUrl.setValue(url);
+  }
 
   onFileChange(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -55,9 +111,19 @@ export class SubmitPageComponent {
     if (!this.submitting) this.fileInputRef?.nativeElement.click();
   }
 
+  onRubricSelect(event: Event): void {
+    this.selectedRubricId.set((event.target as HTMLSelectElement).value);
+    this.rubricIdError = false;
+  }
+
   onSubmit(): void {
-    if (!this.selectedFile) this.fileError = true;
-    if (this.form.invalid || !this.selectedFile) {
+    const isUpload = this.rubricMode() === 'upload';
+    const isLibrary = this.rubricMode() === 'library';
+
+    if (isUpload && !this.selectedFile) this.fileError = true;
+    if (isLibrary && !this.selectedRubricId()) this.rubricIdError = true;
+
+    if (this.form.invalid || (isUpload && !this.selectedFile) || (isLibrary && !this.selectedRubricId())) {
       this.form.markAllAsTouched();
       return;
     }
@@ -69,7 +135,13 @@ export class SubmitPageComponent {
     this.form.disable({ emitEvent: false });
 
     this.evaluationService
-      .submitEvaluation(githubUrl!, assignmentId!, this.selectedFile, studentId || null)
+      .submitEvaluation(
+        githubUrl!,
+        assignmentId!,
+        isUpload ? this.selectedFile : null,
+        studentId || null,
+        isLibrary ? this.selectedRubricId() : null,
+      )
       .pipe(
         finalize(() => {
           this.submitting = false;

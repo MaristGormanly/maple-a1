@@ -69,6 +69,22 @@ export interface CriterionScore {
   recommendations?: RecommendationObject[];
 }
 
+export interface StyleGuideSource {
+  source_title?: string;
+  style_guide_version?: string;
+  rule_id?: string;
+}
+
+export interface StyleFinding {
+  file_path: string;
+  line_range: { start: number; end: number };
+  rule_reference: string;
+  severity: string;
+  message: string;
+  style_guide_excerpt?: string;
+  style_guide_source?: StyleGuideSource;
+}
+
 export interface AiFeedback {
   criteria_scores: CriterionScore[];
   flags: string[];
@@ -77,6 +93,7 @@ export interface AiFeedback {
     language?: string;
   };
   recommendations: RecommendationObject[];
+  style_findings?: StyleFinding[];
 }
 
 export interface CriterionOverride {
@@ -183,6 +200,8 @@ export interface AssignmentData {
   rubric_id: string | null;
   enable_lint_review: boolean;
   language_override: string | null;
+  test_discovery_mode: 'instructor_suite' | 'auto_discover';
+  detected_language: string | null;
   submission_count: number;
 }
 
@@ -228,9 +247,51 @@ export interface StyleGuideReference {
   date_created: string | null;
 }
 
+export interface RepositoryItem {
+  full_name: string;
+  name: string;
+  owner: string;
+  html_url: string;
+  description: string | null;
+  visibility: 'public' | 'private';
+  updated_at: string;
+  default_branch: string;
+}
+
+export interface RepositoryListResponse {
+  success: boolean;
+  data: { repositories: RepositoryItem[]; page: number; count: number } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
 export interface StyleGuideReferencesResponse {
   success: boolean;
   data: { references: StyleGuideReference[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface RubricListItem {
+  rubric_id: string;
+  title: string;
+  total_points: number;
+  notes: string | null;
+  filename: string | null;
+  has_file: boolean;
+  created_at: string | null;
+}
+
+export interface RubricListResponse {
+  success: boolean;
+  data: { rubrics: RubricListItem[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface RubricDetailResponse {
+  success: boolean;
+  data: RubricListItem | null;
   error: ApiError | null;
   metadata: ResponseMetadata;
 }

@@ -36,6 +36,7 @@ import shutil
 import sys
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -204,6 +205,13 @@ async def run_pipeline(
         lang = detect_language_version(student_repo_path, language_override)
         language = lang.get("language", "")
         required_version = parse_major_version(language, lang.get("version"))
+
+        if language:
+            async with async_session_maker() as _db_lang:
+                _asgn = await get_assignment_by_id(_db_lang, assignment_id)
+                if _asgn is not None:
+                    _asgn.detected_language = language
+                    await _db_lang.commit()
 
         _discovered_plan: DiscoveredTestPlan | None = None
 
@@ -725,6 +733,7 @@ async def _run_evaluating_phase(
         )
         _normalize_criteria_scores(envelope)
         _attach_rubric_standards(envelope, rubric_content)
+        envelope["style_findings"] = (reasoning.get("pass2") or {}).get("findings") or []
         # region agent log
         _dlog(
             location="pipeline.py:_run_evaluating_phase:pass3_done",
@@ -936,7 +945,8 @@ def _collect_code_chunks_from_repo(
         if parts & {"node_modules", ".venv", "venv", "__pycache__", "dist", "build"}:
             continue
         try:
-            chunks.extend(extract_chunks(path))
+            rel = str(path.relative_to(root))
+            chunks.extend(replace(c, file_path=rel) for c in extract_chunks(path))
         except Exception:
             logger.exception("run_pipeline: chunker failed on %s", path)
         if len(chunks) >= _MAX_CHUNKS_PER_REPO:

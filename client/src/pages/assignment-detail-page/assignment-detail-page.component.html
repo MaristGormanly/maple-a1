@@ -57,14 +57,28 @@
       <div class="stats-row stats-row--3">
         <div class="stat-cell">
           <div class="stat-cell__label">Test suite</div>
-          <div class="stat-cell__value mono"
-            style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">
-            {{assignment()!.test_suite_repo_url ?? '—'}}
+          <div class="stat-cell__value">
+            @if (assignment()!.test_discovery_mode === 'auto_discover') {
+            <span class="badge badge--neutral">Auto-discover</span>
+            } @else {
+            <span class="mono"
+              style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;max-width:260px">
+              {{assignment()!.test_suite_repo_url ?? '—'}}
+            </span>
+            }
           </div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell__label">Language</div>
-          <div class="stat-cell__value">{{assignment()!.language_override ?? 'Auto-detect'}}</div>
+          <div class="stat-cell__value">
+            @if (assignment()!.language_override) {
+            <span class="badge badge--neutral">{{assignment()!.language_override}}</span>
+            } @else if (assignment()!.detected_language) {
+            <span class="badge badge--neutral">{{assignment()!.detected_language}}</span>
+            } @else {
+            Auto-detect
+            }
+          </div>
         </div>
         <div class="stat-cell">
           <div class="stat-cell__label">Submissions</div>

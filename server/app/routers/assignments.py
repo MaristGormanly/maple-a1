@@ -38,6 +38,7 @@ def _assignment_to_dict(a, submission_count: int = 0) -> dict:
         "enable_lint_review": a.enable_lint_review,
         "language_override": a.language_override,
         "test_discovery_mode": getattr(a, "test_discovery_mode", "instructor_suite"),
+        "detected_language": getattr(a, "detected_language", None),
         "submission_count": submission_count,
     }
 

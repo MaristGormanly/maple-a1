@@ -72,6 +72,19 @@
           <label class="field__label" for="githubUrl">
             Student GitHub URL <span class="field__req">*</span>
           </label>
+          <div class="seg" style="margin-bottom:10px">
+            <button type="button" class="seg__item" [class.seg__item--active]="urlMode() === 'manual'"
+              (click)="switchMode('manual')">
+              <svg width="13" height="13"><use href="#icon-submit" /></svg>
+              Enter URL
+            </button>
+            <button type="button" class="seg__item" [class.seg__item--active]="urlMode() === 'picker'"
+              (click)="switchMode('picker')">
+              <svg width="13" height="13"><use href="#icon-github" /></svg>
+              My Repositories
+            </button>
+          </div>
+          @if (urlMode() === 'manual') {
           <div class="input-wrap">
             <span class="input-wrap__adorn">
               <svg width="14" height="14">
@@ -81,6 +94,24 @@
             <input id="githubUrl" class="input input--mono" [class.input--error]="showUrlErr"
               placeholder="https://github.com/owner/repo" formControlName="githubUrl" />
           </div>
+          }
+          @if (urlMode() === 'picker') {
+            @if (reposLoading()) {
+            <div class="input" style="display:flex;align-items:center;gap:8px;color:var(--ink-3)">
+              <span class="spinner" style="width:14px;height:14px"></span>
+              Loading repositories…
+            </div>
+            } @else if (reposError()) {
+            <div class="input" style="color:var(--red)">{{reposError()}}</div>
+            } @else {
+            <select class="select" [class.input--error]="showUrlErr" (change)="onRepoPicked($event)">
+              <option value="">— Select a repository —</option>
+              @for (repo of repos(); track repo.full_name) {
+              <option [value]="repo.html_url">{{repo.full_name}} ({{repo.visibility}})</option>
+              }
+            </select>
+            }
+          }
           @if (showUrlErr) {
           <span class="field__error">
             <svg width="13" height="13">
@@ -113,11 +144,25 @@
           }
         </div>
 
-        <!-- Rubric file -->
+        <!-- Rubric -->
         <div class="field">
           <label class="field__label">
-            Rubric file <span class="field__req">*</span>
+            Rubric <span class="field__req">*</span>
           </label>
+          <div class="seg" style="margin-bottom:10px">
+            <button type="button" class="seg__item" [class.seg__item--active]="rubricMode() === 'upload'"
+              (click)="rubricMode.set('upload')">
+              <svg width="13" height="13"><use href="#icon-upload" /></svg>
+              Upload file
+            </button>
+            <button type="button" class="seg__item" [class.seg__item--active]="rubricMode() === 'library'"
+              (click)="rubricMode.set('library')">
+              <svg width="13" height="13"><use href="#icon-clipboard" /></svg>
+              From library
+            </button>
+          </div>
+
+          @if (rubricMode() === 'upload') {
           <div class="filedrop" [class.filedrop--error]="fileError" [class.filedrop--active]="!!selectedFile"
             (click)="triggerFileInput()" role="button">
             <div class="filedrop__icon">
@@ -137,13 +182,13 @@
                 .{{selectedFile.name.split('.').pop()}}</div>
               } @else {
               <div class="filedrop__title">Click to attach or drop file</div>
-              <div class="filedrop__sub">accepts .json, .txt</div>
+              <div class="filedrop__sub">accepts .json, .txt, .pdf</div>
               }
             </div>
             @if (selectedFile) {
             <button type="button" class="btn btn--ghost btn--sm" (click)="clearFile($event)">Clear</button>
             }
-            <input #fileInput type="file" accept=".json,.txt" style="display:none" (change)="onFileChange($event)" />
+            <input #fileInput type="file" accept=".json,.txt,.pdf" style="display:none" (change)="onFileChange($event)" />
           </div>
           @if (fileError) {
           <span class="field__error">
@@ -153,8 +198,34 @@
             Attach the rubric to score this submission against.
           </span>
           } @else {
-          <span class="field__hint">JSON or TXT. Sent with the request and used as the grading standard for this
-            run.</span>
+          <span class="field__hint">JSON, TXT, or PDF. Sent with the request and used as the grading standard for this run.</span>
+          }
+          }
+
+          @if (rubricMode() === 'library') {
+          @if (savedRubrics().length === 0) {
+          <div class="banner banner--error" role="alert">
+            <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn" /></svg></span>
+            <div class="banner__copy">
+              <div class="banner__body">No saved rubrics — <a routerLink="/rubrics">add one first</a>.</div>
+            </div>
+          </div>
+          } @else {
+          <select class="input" [value]="selectedRubricId()" (change)="onRubricSelect($event)"
+            [class.input--error]="rubricIdError">
+            @for (r of savedRubrics(); track r.rubric_id) {
+            <option [value]="r.rubric_id">{{r.title}}</option>
+            }
+          </select>
+          @if (rubricIdError) {
+          <span class="field__error">
+            <svg width="13" height="13"><use href="#icon-warn" /></svg>
+            Select a rubric from the library.
+          </span>
+          } @else {
+          <span class="field__hint">Uses your saved rubric. <a routerLink="/rubrics">Manage rubrics</a>.</span>
+          }
+          }
           }
         </div>
 

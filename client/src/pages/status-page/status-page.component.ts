@@ -5,10 +5,11 @@ import { FormsModule } from '@angular/forms';
 import { EvaluationService } from '../../services/evaluation.service';
 import {
   CriterionOverride, CriterionScore, LanguageInfo, RecommendationObject, ReviewRequest,
-  RubricCriterion, ScoreLevel, SubmissionData, SubmissionStatusData, TestCase, TestSummary,
+  RubricCriterion, ScoreLevel, StyleFinding, SubmissionData, SubmissionStatusData, TestCase, TestSummary,
 } from '../../utils/api.types';
 import { CriteriaScoresComponent } from '../../components/criteria-scores/criteria-scores.component';
 import { DiffViewerComponent } from '../../components/diff-viewer/diff-viewer.component';
+import { StyleFindingsComponent } from '../../components/style-findings/style-findings.component';
 import { ConfirmDialogComponent } from '../../components/confirm-dialog/confirm-dialog.component';
 import { badgeTone, displayStatus } from '../../utils/status-display.util';
 
@@ -27,7 +28,7 @@ interface PipelineStage {
 @Component({
   selector: 'app-status-page',
   standalone: true,
-  imports: [FormsModule, CriteriaScoresComponent, DiffViewerComponent, ConfirmDialogComponent],
+  imports: [FormsModule, CriteriaScoresComponent, DiffViewerComponent, ConfirmDialogComponent, StyleFindingsComponent],
   templateUrl: './status-page.component.html',
 })
 export class StatusPageComponent implements OnInit, OnDestroy {
@@ -37,7 +38,7 @@ export class StatusPageComponent implements OnInit, OnDestroy {
   studentLabel: string | null = null;
   pollError: string | null = null;
 
-  activeTab: 'scores' | 'diff' = 'scores';
+  activeTab: 'scores' | 'diff' | 'style' = 'scores';
   showDeleteDialog = false;
   showTestCases = false;
   deleteLoading = false;
@@ -190,6 +191,10 @@ export class StatusPageComponent implements OnInit, OnDestroy {
 
   get recommendations(): RecommendationObject[] {
     return this.statusData?.evaluation?.ai_feedback?.recommendations ?? [];
+  }
+
+  get styleFindings(): StyleFinding[] {
+    return this.statusData?.evaluation?.ai_feedback?.style_findings ?? [];
   }
 
   get languageInfo(): LanguageInfo | null {

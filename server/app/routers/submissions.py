@@ -149,6 +149,7 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
                         "language": ai_meta.get("language"),
                     },
                     "recommendations": recommendations,
+                    "style_findings": feedback_json.get("style_findings") or [],
                 }
 
         data["evaluation"] = eval_data

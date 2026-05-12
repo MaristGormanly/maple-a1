@@ -18,13 +18,15 @@ export class EvaluationService {
   submitEvaluation(
     githubUrl: string,
     assignmentId: string,
-    rubricFile: File,
+    rubricFile: File | null,
     studentName?: string | null,
+    rubricId?: string | null,
   ): Observable<SubmissionResponse> {
     const body = new FormData();
     body.append('github_url', githubUrl);
     body.append('assignment_id', assignmentId);
-    body.append('rubric', rubricFile);
+    if (rubricFile) body.append('rubric', rubricFile);
+    if (rubricId) body.append('rubric_id', rubricId);
     if (studentName) body.append('student_name', studentName);
 
     // Do not set Content-Type manually — the browser sets multipart/form-data

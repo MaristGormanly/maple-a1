@@ -1,0 +1,211 @@
+<div class="topbar">
+  <div class="crumbs">
+    <span>Rubrics</span>
+    <span class="crumbs__sep">/</span>
+    <strong>All rubrics</strong>
+  </div>
+</div>
+
+<div class="page page--wide">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Rubrics</h1>
+      <div class="page-header__sub">Manage reusable grading rubrics for your assignments.</div>
+    </div>
+    <button class="btn btn--primary btn--sm" (click)="openNewDialog()">
+      <svg width="13" height="13"><use href="#icon-plus" /></svg>
+      New rubric
+    </button>
+  </div>
+
+  @if (loadError()) {
+    <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+      <span class="banner__icon">
+        <svg width="16" height="16"><use href="#icon-warn" /></svg>
+      </span>
+      <div class="banner__copy">
+        <div class="banner__title">Failed to load rubrics</div>
+        <div class="banner__body">{{ loadError() }}</div>
+      </div>
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="card" style="padding:40px;text-align:center">
+      <span class="spinner"></span>
+    </div>
+  }
+
+  @if (!loading() && !loadError() && rubrics().length === 0) {
+    <div class="card">
+      <div class="empty">
+        <div class="empty__icon">
+          <svg width="24" height="24"><use href="#icon-file" /></svg>
+        </div>
+        <h3>No rubrics yet</h3>
+        <p>Upload your first rubric to reference it from any submission.</p>
+        <button class="btn btn--primary btn--sm" (click)="openNewDialog()">
+          <svg width="13" height="13"><use href="#icon-plus" /></svg>
+          New rubric
+        </button>
+      </div>
+    </div>
+  }
+
+  @if (!loading() && rubrics().length > 0) {
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px">
+      @for (r of rubrics(); track r.rubric_id) {
+        <div class="card" style="border-width:1px 2px 1px 5px;display:flex;flex-direction:column">
+
+          <!-- File preview area -->
+          @if (r.has_file && isPdf(r.filename) && fileBlobUrls.get(r.rubric_id)) {
+            <div style="height:220px;overflow:hidden;border-radius:var(--radius-lg) var(--radius-lg) 0 0;flex-shrink:0">
+              <iframe [src]="fileBlobUrls.get(r.rubric_id)" style="width:100%;height:100%;border:none"
+                title="Rubric PDF preview"></iframe>
+            </div>
+          } @else if (r.has_file && isPdf(r.filename)) {
+            <div style="height:80px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--bg-subtle);border-radius:var(--radius-lg) var(--radius-lg) 0 0;flex-shrink:0">
+              <svg width="16" height="16"><use href="#icon-file" /></svg>
+              <span class="mono muted" style="font-size:12px">Loading preview…</span>
+            </div>
+          } @else if (r.has_file) {
+            <div style="height:80px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--bg-subtle);border-radius:var(--radius-lg) var(--radius-lg) 0 0;flex-shrink:0">
+              <svg width="16" height="16"><use href="#icon-file" /></svg>
+              <span class="mono" style="font-size:12px">{{ r.filename }}</span>
+            </div>
+          } @else {
+            <div style="height:60px;display:grid;place-items:center;background:var(--bg-subtle);border-radius:var(--radius-lg) var(--radius-lg) 0 0;flex-shrink:0">
+              <span class="muted" style="font-size:12px">No file attached</span>
+            </div>
+          }
+
+          <div class="card__body" style="display:flex;flex-direction:column;gap:12px;flex:1">
+            <div class="field">
+              <label class="field__label" [for]="'title-' + r.rubric_id">Title</label>
+              <input [id]="'title-' + r.rubric_id" class="input"
+                [value]="editMap.get(r.rubric_id)?.title ?? r.title"
+                (input)="onTitleInput(r.rubric_id, $event)" />
+            </div>
+            <div class="field">
+              <label class="field__label" [for]="'notes-' + r.rubric_id">
+                Notes <span class="field__opt">(optional)</span>
+              </label>
+              <textarea [id]="'notes-' + r.rubric_id" class="textarea" rows="3"
+                [value]="editMap.get(r.rubric_id)?.notes ?? (r.notes ?? '')"
+                (input)="onNotesInput(r.rubric_id, $event)"></textarea>
+            </div>
+          </div>
+
+          <div class="card__foot">
+            <button class="btn btn--ghost btn--sm" (click)="openDeleteDialog(r.rubric_id)">
+              <svg width="12" height="12"><use href="#icon-x" /></svg>
+              Delete
+            </button>
+            <div style="flex:1"></div>
+            <button class="btn btn--primary btn--sm"
+              [disabled]="editMap.get(r.rubric_id)?.saving"
+              (click)="saveRubric(r.rubric_id)">
+              {{ editMap.get(r.rubric_id)?.saving ? 'Saving…' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<!-- New Rubric Dialog -->
+@if (showNewDialog()) {
+  <div class="dialog-overlay" (click)="closeNewDialog()">
+    <div class="card dialog-panel" (click)="$event.stopPropagation()" style="max-width:480px;width:100%">
+      <div class="card__head">
+        <div class="card__title">New rubric</div>
+        <div class="card__sub">Upload a rubric file and give it a title for reuse.</div>
+      </div>
+      <div class="card__body" style="display:flex;flex-direction:column;gap:14px">
+
+        <div class="field">
+          <label class="field__label" for="new-title">
+            Title <span class="field__req">*</span>
+          </label>
+          <input id="new-title" class="input"
+            [value]="newTitle()"
+            (input)="newTitle.set(getValue($event))"
+            placeholder="e.g. Assignment 1 Rubric" />
+        </div>
+
+        <div class="field">
+          <label class="field__label">
+            Rubric file <span class="field__opt">(optional)</span>
+          </label>
+          <div class="filedrop" [class.filedrop--active]="!!newFile"
+            (click)="triggerNewFileInput()" role="button">
+            <div class="filedrop__icon">
+              <svg width="20" height="20"><use href="#icon-upload" /></svg>
+            </div>
+            <div class="filedrop__copy">
+              @if (newFile) {
+                <div class="filedrop__file">
+                  <svg width="13" height="13"><use href="#icon-file" /></svg>
+                  {{ newFile.name }}
+                </div>
+                <div class="filedrop__sub">{{ (newFile.size / 1024).toFixed(1) }} KB</div>
+              } @else {
+                <div class="filedrop__title">Click to attach</div>
+                <div class="filedrop__sub">accepts .pdf, .json, .txt</div>
+              }
+            </div>
+            <input #newFileInput type="file" accept=".pdf,.json,.txt"
+              style="display:none" (change)="onNewFileChange($event)" />
+          </div>
+          <span class="field__hint">Attach a rubric document to preview and reference later.</span>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="new-notes">
+            Notes <span class="field__opt">(optional)</span>
+          </label>
+          <textarea id="new-notes" class="textarea" rows="3"
+            [value]="newNotes()"
+            (input)="newNotes.set(getValue($event))"
+            placeholder="Add any notes for this rubric…"></textarea>
+        </div>
+
+        @if (createError()) {
+          <div class="banner banner--error" role="alert">
+            <span class="banner__icon">
+              <svg width="16" height="16"><use href="#icon-warn" /></svg>
+            </span>
+            <div class="banner__copy">
+              <div class="banner__body">{{ createError() }}</div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="card__foot">
+        <div style="flex:1"></div>
+        <button class="btn btn--ghost btn--sm" (click)="closeNewDialog()" [disabled]="creating()">
+          Cancel
+        </button>
+        <button class="btn btn--primary btn--sm" [disabled]="creating()" (click)="createRubric()">
+          @if (creating()) {
+            <span class="spinner"></span>
+            Creating…
+          } @else {
+            Create rubric
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<app-confirm-dialog
+  [visible]="showDeleteDialog"
+  title="Delete rubric?"
+  message="This cannot be undone. If this rubric is linked to any assignment, deletion will be blocked."
+  confirmLabel="Delete rubric"
+  [loading]="deleteLoading()"
+  (confirmed)="onDeleteConfirmed()"
+  (cancelled)="pendingDeleteId.set(null)" />
