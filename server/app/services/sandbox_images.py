@@ -11,7 +11,7 @@ Design-doc references:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,9 @@ class SandboxProfile:
 
 _JAVA_TEST_COMMAND = (
     "mvn test -B -Djava.io.tmpdir=/workspace 2>&1"
+    "; maple_status=$?"
     "; find target/surefire-reports -name '*.xml' -exec cat {} \\; 2>/dev/null"
+    "; exit $maple_status"
 )
 
 _JAVA_PROFILES: list[SandboxProfile] = [
@@ -123,6 +125,10 @@ _NODE_PROFILES: list[SandboxProfile] = [
     ),
 ]
 
+_TYPESCRIPT_PROFILES: list[SandboxProfile] = [
+    replace(profile, language="typescript") for profile in _NODE_PROFILES
+]
+
 _CPP_PROFILE = SandboxProfile(
     language="cpp",
     image="ubuntu:22.04",
@@ -142,7 +148,7 @@ _PROFILES_BY_LANGUAGE: dict[str, list[SandboxProfile]] = {
     "java": _JAVA_PROFILES,
     "python": _PYTHON_PROFILES,
     "javascript": _NODE_PROFILES,
-    "typescript": _NODE_PROFILES,
+    "typescript": _TYPESCRIPT_PROFILES,
 }
 
 # Default profile per language (highest version / most capable).
@@ -150,7 +156,7 @@ _DEFAULTS: dict[str, SandboxProfile] = {
     "java": _JAVA_PROFILES[-1],
     "python": _PYTHON_PROFILES[-1],
     "javascript": _NODE_PROFILES[1],   # node:20 is current LTS default
-    "typescript": _NODE_PROFILES[1],
+    "typescript": _TYPESCRIPT_PROFILES[1],
     "cpp": _CPP_PROFILE,
 }
 

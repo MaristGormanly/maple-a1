@@ -146,6 +146,13 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
 
     try:
         try:
+            logger.info(
+                "docker_runner: creating sandbox container image=%s "
+                "timeout=%s network_disabled=%s",
+                config.image,
+                timeout,
+                config.network_disabled,
+            )
             container = client.containers.create(**create_kwargs)
         except ImageNotFound:
             logger.info("Image %s not found locally; pulling from registry...", config.image)
@@ -155,11 +162,29 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
                 raise DockerRunnerError(
                     f"Image {config.image!r} not found locally and could not be pulled from registry"
                 ) from None
+            logger.info("docker_runner: pulled sandbox image=%s", config.image)
             container = client.containers.create(**create_kwargs)
+        container_id = getattr(container, "id", "unknown")
+        logger.info(
+            "docker_runner: sandbox container created id=%s image=%s",
+            container_id,
+            config.image,
+        )
         container.start()
+        logger.info(
+            "docker_runner: sandbox container started id=%s image=%s",
+            container_id,
+            config.image,
+        )
 
         wait_result = container.wait(timeout=timeout)
         exit_code: int = wait_result["StatusCode"]
+        logger.info(
+            "docker_runner: sandbox container finished id=%s image=%s exit_code=%s",
+            container_id,
+            config.image,
+            exit_code,
+        )
 
         stdout = container.logs(stdout=True, stderr=False).decode(
             "utf-8", errors="replace"
@@ -181,6 +206,11 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         # Likely a timeout from container.wait(). Try to kill and collect logs.
         if container is not None:
             try:
+                logger.warning(
+                    "docker_runner: sandbox container timeout; killing id=%s image=%s",
+                    getattr(container, "id", "unknown"),
+                    config.image,
+                )
                 container.kill()
                 stdout = container.logs(stdout=True, stderr=False).decode(
                     "utf-8", errors="replace"
@@ -189,7 +219,8 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
                     "utf-8", errors="replace"
                 )
                 return ContainerResult(
-                    exit_code=124,  # TTL exceeded — design-doc §3 §IV; maps to timed_out=True in test_parser
+                    # TTL exceeded; test_parser maps this to timed_out=True.
+                    exit_code=124,
                     stdout=stdout,
                     stderr=stderr,
                     timed_out=True,
@@ -204,6 +235,11 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         if container is not None:
             try:
                 container.remove(force=True)
+                logger.info(
+                    "docker_runner: sandbox container removed id=%s image=%s",
+                    getattr(container, "id", "unknown"),
+                    config.image,
+                )
             except Exception:
                 logger.warning("Failed to remove container %s", getattr(container, "id", "unknown"))
         client.close()

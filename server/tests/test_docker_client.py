@@ -23,6 +23,8 @@ class TestBuildShellCommand(unittest.TestCase):
         cmd = _build_shell_command(profile)
         self.assertIn("mvn test", cmd[2])
         self.assertNotIn("install", cmd[2])
+        self.assertIn("maple_status=$?", cmd[2])
+        self.assertTrue(cmd[2].endswith("exit $maple_status"))
 
     def test_javascript_command_includes_conditional_install(self) -> None:
         profile = SANDBOX_PROFILES["javascript"]
@@ -61,6 +63,7 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.volumes["/host/tests"]["mode"], "ro")
         self.assertEqual(config.timeout, 30)
         self.assertEqual(config.working_dir, "/workspace")
+        self.assertFalse(config.network_disabled)
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
     async def test_java_uses_maven_image(self, mock_run) -> None:
@@ -102,6 +105,27 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.stderr, "err")
         # timed_out is NOT exposed in the public ContainerResult
         self.assertFalse(hasattr(result, "timed_out"))
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_preserves_test_command_exit_code(self, mock_run) -> None:
+        mock_run.return_value = RunnerResult(
+            exit_code=1, stdout="", stderr="build failed", timed_out=False,
+        )
+
+        await run_container(
+            "java",
+            "/host/student",
+            None,
+            discovered_command="mvn test",
+            discovered_working_dir=".",
+        )
+
+        config: ContainerConfig = mock_run.await_args[0][0]
+        command = config.command[2]
+        self.assertIn("mvn test", command)
+        self.assertIn("maple_status=$?", command)
+        self.assertIn("find .", command)
+        self.assertTrue(command.endswith("exit $maple_status"))
 
 
 if __name__ == "__main__":

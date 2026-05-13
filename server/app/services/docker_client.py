@@ -114,7 +114,9 @@ async def run_container(
             f"cp -a /workspace/source/. /workspace/build/"
             f" && cd /workspace/build/{safe_dir}"
             f" && {discovered_command}"
+            f"; maple_status=$?"
             f"{extract_xml}"
+            f"; exit $maple_status"
         )
         command = ["sh", "-c", inner]
         volumes = {
@@ -147,8 +149,7 @@ async def run_container(
         environment=sandbox_environment,
         working_dir=container_working_dir,
         timeout=timeout_seconds,
-        # Network: disabled in production; allowed in dev so pip can install deps.
-        network_disabled=(settings.APP_ENV == "production"),
+        network_disabled=settings.DOCKER_SANDBOX_NETWORK_DISABLED,
         # Memory: cap each container at 256 MB
         mem_limit="256m",
         # CPU: 50% of one core (quota/period = 0.5)

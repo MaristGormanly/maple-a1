@@ -22,6 +22,8 @@ class TestSandboxProfiles(unittest.TestCase):
         self.assertEqual(p.language, "java")
         self.assertIn("maven", p.image)
         self.assertIn("mvn test", p.test_command)
+        self.assertIn("maple_status=$?", p.test_command)
+        self.assertTrue(p.test_command.endswith("exit $maple_status"))
         self.assertIsNone(p.install_command)
 
     def test_javascript_profile(self) -> None:
@@ -61,30 +63,47 @@ class TestSandboxProfiles(unittest.TestCase):
 
 class TestGetSandboxProfile(unittest.TestCase):
     def test_returns_python(self) -> None:
-        self.assertEqual(get_sandbox_profile("python").language, "python")
+        profile, version_ok = get_sandbox_profile("python")
+        self.assertEqual(profile.language, "python")
+        self.assertTrue(version_ok)
 
     def test_returns_java(self) -> None:
-        self.assertEqual(get_sandbox_profile("java").language, "java")
+        profile, version_ok = get_sandbox_profile("java")
+        self.assertEqual(profile.language, "java")
+        self.assertTrue(version_ok)
 
     def test_returns_javascript(self) -> None:
-        self.assertEqual(get_sandbox_profile("javascript").language, "javascript")
+        profile, version_ok = get_sandbox_profile("javascript")
+        self.assertEqual(profile.language, "javascript")
+        self.assertTrue(version_ok)
 
     def test_returns_typescript(self) -> None:
-        self.assertEqual(get_sandbox_profile("typescript").language, "typescript")
+        profile, version_ok = get_sandbox_profile("typescript")
+        self.assertEqual(profile.language, "typescript")
+        self.assertTrue(version_ok)
 
     def test_unknown_falls_back_to_default(self) -> None:
-        self.assertEqual(get_sandbox_profile("rust"), DEFAULT_PROFILE)
+        profile, version_ok = get_sandbox_profile("rust")
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_empty_string_falls_back(self) -> None:
-        self.assertEqual(get_sandbox_profile(""), DEFAULT_PROFILE)
+        profile, version_ok = get_sandbox_profile("")
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_none_falls_back(self) -> None:
-        self.assertEqual(get_sandbox_profile(None), DEFAULT_PROFILE)  # type: ignore[arg-type]
+        profile, version_ok = get_sandbox_profile(None)  # type: ignore[arg-type]
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_case_insensitive(self) -> None:
-        self.assertEqual(get_sandbox_profile("Python").language, "python")
-        self.assertEqual(get_sandbox_profile("JAVA").language, "java")
-        self.assertEqual(get_sandbox_profile("JavaScript").language, "javascript")
+        python_profile, _ = get_sandbox_profile("Python")
+        java_profile, _ = get_sandbox_profile("JAVA")
+        js_profile, _ = get_sandbox_profile("JavaScript")
+        self.assertEqual(python_profile.language, "python")
+        self.assertEqual(java_profile.language, "java")
+        self.assertEqual(js_profile.language, "javascript")
 
     def test_default_profile_is_python(self) -> None:
         self.assertEqual(DEFAULT_PROFILE.language, "python")

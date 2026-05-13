@@ -351,6 +351,7 @@ The app is configured with a **`.env`** file. Values must **never** be committed
 |----------------|-------------------|
 | `DATABASE_*` / `DATABASE_URL` | PostgreSQL (use a **local** database for development) |
 | `APP_ENV`, `APP_HOST`, `APP_PORT` | Application environment and server binding |
+| `DOCKER_SOCKET_URL`, `DOCKER_CONTAINER_TIMEOUT`, `DOCKER_SANDBOX_NETWORK_DISABLED` | Docker sandbox connection, TTL, and whether submitted-code containers can fetch dependencies |
 | `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT signing and token lifetime |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | Fernet key used to encrypt instructor GitHub PATs stored in the database. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Instructor PATs are entered in the app under **Settings → GitHub Connections**, not stored in `.env`. |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | LLM provider keys (placeholders until Milestone 3) |
