@@ -239,6 +239,31 @@ export interface GitHubSettingsResponse {
   metadata: ResponseMetadata;
 }
 
+export interface AccountProfile {
+  user_id: string;
+  name: string | null;
+  email: string;
+  username: string | null;
+  school: string | null;
+  role: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AccountProfileResponse {
+  success: boolean;
+  data: AccountProfile | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface PasswordUpdateResponse {
+  success: boolean;
+  data: { updated: boolean } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
 export interface StyleGuideReference {
   title: string;
   document_url: string;
@@ -274,6 +299,7 @@ export interface StyleGuideReferencesResponse {
 
 export interface RubricListItem {
   rubric_id: string;
+  instructor_id: string | null;
   title: string;
   total_points: number;
   notes: string | null;

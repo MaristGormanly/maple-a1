@@ -6,17 +6,47 @@ import { environment } from '../environments/environment';
 
 interface LoginResponse {
   success: boolean;
-  data: { access_token: string; token_type: string } | null;
+  data: { access_token: string; token_type: string; user?: AuthUser } | null;
   error: { code: string; message: string } | null;
+}
+
+interface RegisterResponse {
+  success: boolean;
+  data: ({ access_token: string; token_type: string } & AuthUser) | null;
+  error: { code: string; message: string } | null;
+}
+
+export interface AuthUser {
+  user_id: string;
+  email: string;
+  name: string | null;
+  username: string | null;
+  school: string | null;
+  role: string;
 }
 
 interface JwtClaims {
   sub: string;
   role: string;
+  email?: string;
+  name?: string;
   exp?: number;
 }
 
 export interface LoginOutcome {
+  success: boolean;
+  errorMessage?: string;
+}
+
+export interface RegisterRequest {
+  name: string;
+  email: string;
+  username?: string | null;
+  school?: string | null;
+  password: string;
+}
+
+export interface RegisterOutcome {
   success: boolean;
   errorMessage?: string;
 }
@@ -28,6 +58,7 @@ export class AuthService {
   private http = inject(HttpClient);
 
   private readonly loginUrl = `${environment.apiBaseUrl}/api/v1/code-eval/auth/login`;
+  private readonly registerUrl = `${environment.apiBaseUrl}/api/v1/code-eval/auth/register`;
 
   setToken(token: string): void {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
@@ -88,5 +119,30 @@ export class AuthService {
           return of({ success: false, errorMessage: message });
         }),
       );
+  }
+
+  register(request: RegisterRequest): Observable<RegisterOutcome> {
+    const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
+    return this.http.post<RegisterResponse>(this.registerUrl, request, { headers }).pipe(
+      map((response) => {
+        if (response.success && response.data?.access_token) {
+          this.setToken(response.data.access_token);
+          return { success: true };
+        }
+        return {
+          success: false,
+          errorMessage: response.error?.message ?? 'Account creation failed.',
+        };
+      }),
+      catchError((err) => {
+        const code: string = err?.error?.error?.code ?? 'NETWORK_ERROR';
+        const message: string =
+          err?.error?.error?.message ??
+          (code === 'CONFLICT'
+            ? 'An account with that email or username already exists.'
+            : 'Account creation failed — check your connection and try again.');
+        return of({ success: false, errorMessage: message });
+      }),
+    );
   }
 }

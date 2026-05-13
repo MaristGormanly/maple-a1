@@ -22,6 +22,7 @@ _UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "rubrics"
 def _rubric_to_dict(r: Rubric) -> dict:
     return {
         "rubric_id": str(r.id),
+        "instructor_id": str(r.instructor_id) if r.instructor_id else None,
         "title": r.title,
         "total_points": r.total_points,
         "notes": r.notes,
@@ -29,6 +30,24 @@ def _rubric_to_dict(r: Rubric) -> dict:
         "has_file": r.filename is not None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }
+
+
+def _current_user_id(current_user: dict) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(current_user["sub"]))
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def _is_admin(current_user: dict) -> bool:
+    return str(current_user.get("role", "")).strip().lower() == "admin"
+
+
+def _can_access_rubric(rubric: Rubric, current_user: dict) -> bool:
+    if _is_admin(current_user):
+        return True
+    user_id = _current_user_id(current_user)
+    return user_id is not None and rubric.instructor_id == user_id
 
 
 # ── Pydantic schemas for POST /rubrics (existing) ────────────────────────────
@@ -100,8 +119,13 @@ async def create_rubric(
     else:
         rubric_id = uuid.uuid4()
 
+    instructor_id = _current_user_id(current_user)
+    if instructor_id is None:
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+
     rubric = Rubric(
         id=rubric_id,
+        instructor_id=instructor_id,
         title=request.title,
         total_points=request.total_points,
         schema_json=[c.model_dump() for c in request.criteria],
@@ -134,7 +158,13 @@ async def list_rubrics(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    result = await db.execute(select(Rubric).order_by(Rubric.created_at.desc()))
+    query = select(Rubric).order_by(Rubric.created_at.desc())
+    if not _is_admin(current_user):
+        user_id = _current_user_id(current_user)
+        if user_id is None:
+            return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+        query = query.where(Rubric.instructor_id == user_id)
+    result = await db.execute(query)
     rubrics = result.scalars().all()
     return success_response({"rubrics": [_rubric_to_dict(r) for r in rubrics]})
 
@@ -154,6 +184,8 @@ async def get_rubric(
     rubric = await db.get(Rubric, rid)
     if not rubric:
         return error_response(404, "NOT_FOUND", f"Rubric '{rubric_id}' not found")
+    if not _can_access_rubric(rubric, current_user):
+        return error_response(403, "FORBIDDEN", "Access denied.")
     return success_response(_rubric_to_dict(rubric))
 
 
@@ -173,6 +205,8 @@ async def update_rubric(
     rubric = await db.get(Rubric, rid)
     if not rubric:
         return error_response(404, "NOT_FOUND", f"Rubric '{rubric_id}' not found")
+    if not _can_access_rubric(rubric, current_user):
+        return error_response(403, "FORBIDDEN", "Access denied.")
     if request.title is not None:
         rubric.title = request.title
     if request.notes is not None:
@@ -197,6 +231,8 @@ async def delete_rubric(
     rubric = await db.get(Rubric, rid)
     if not rubric:
         return error_response(404, "NOT_FOUND", f"Rubric '{rubric_id}' not found")
+    if not _can_access_rubric(rubric, current_user):
+        return error_response(403, "FORBIDDEN", "Access denied.")
 
     linked = (
         await db.execute(select(Assignment).where(Assignment.rubric_id == rid).limit(1))
@@ -234,6 +270,8 @@ async def upload_rubric_file(
     rubric = await db.get(Rubric, rid)
     if not rubric:
         return error_response(404, "NOT_FOUND", f"Rubric '{rubric_id}' not found")
+    if not _can_access_rubric(rubric, current_user):
+        return error_response(403, "FORBIDDEN", "Access denied.")
 
     original_name = file.filename or "rubric"
     ext = Path(original_name).suffix.lower()
@@ -274,6 +312,8 @@ async def get_rubric_file(
     rubric = await db.get(Rubric, rid)
     if not rubric or not rubric.filename:
         return error_response(404, "NOT_FOUND", "No file stored for this rubric")
+    if not _can_access_rubric(rubric, current_user):
+        return error_response(403, "FORBIDDEN", "Access denied.")
 
     stored_files = list(_UPLOADS_DIR.glob(f"{rubric_id}_*"))
     if not stored_files:

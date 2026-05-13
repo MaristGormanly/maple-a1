@@ -15,11 +15,12 @@ Design-doc references:
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import docker
 from docker.errors import APIError, DockerException, ImageNotFound
 
-from ..config import settings
+from ..config import PROJECT_ROOT, settings
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,28 @@ def _get_client() -> docker.DockerClient:
     return docker.DockerClient(base_url=settings.DOCKER_SOCKET_URL)
 
 
+def _host_volume_source(source: str) -> str:
+    """Translate in-container project paths to host paths for sibling containers."""
+    host_root = getattr(settings, "DOCKER_HOST_PROJECT_ROOT", "")
+    if not isinstance(host_root, str) or not host_root.strip():
+        return source
+
+    source_path = Path(source)
+    if not source_path.is_absolute():
+        return source
+
+    try:
+        relative_source = source_path.resolve().relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        return source
+
+    return str(Path(host_root.strip()) / relative_source)
+
+
+def _host_volume_sources(volumes: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    return {_host_volume_source(source): options for source, options in volumes.items()}
+
+
 # ---------------------------------------------------------------------------
 # Synchronous container lifecycle
 # ---------------------------------------------------------------------------
@@ -99,7 +122,7 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         "detach": True,
     }
     if config.volumes:
-        create_kwargs["volumes"] = config.volumes
+        create_kwargs["volumes"] = _host_volume_sources(config.volumes)
     if config.environment:
         create_kwargs["environment"] = config.environment
     if config.working_dir is not None:

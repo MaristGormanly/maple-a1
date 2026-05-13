@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..middleware.auth import get_current_user, require_role
 from ..models.database import get_db
+from ..models.rubric import Rubric
 from ..services.assignments import (
     create_assignment,
     delete_assignment,
@@ -43,12 +44,25 @@ def _assignment_to_dict(a, submission_count: int = 0) -> dict:
     }
 
 
+def _current_user_id(current_user: dict) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(current_user["sub"]))
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def _is_admin(current_user: dict) -> bool:
+    return str(current_user.get("role", "")).strip().lower() == "admin"
+
+
 @router.get("")
 async def list_assignments_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    instructor_id = uuid.UUID(current_user["sub"])
+    instructor_id = _current_user_id(current_user)
+    if instructor_id is None:
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
     role = current_user.get("role", "")
     rows = await list_assignments(db, instructor_id=instructor_id, role=role)
     return success_response({
@@ -65,6 +79,10 @@ async def create_assignment_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_role("Instructor")),
 ):
+    instructor_id = _current_user_id(current_user)
+    if instructor_id is None:
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+
     rubric_uuid = None
     if request.rubric_id:
         try:
@@ -75,8 +93,11 @@ async def create_assignment_endpoint(
                 code="VALIDATION_ERROR",
                 message="rubric_id must be a valid UUID",
             )
-
-    instructor_id = uuid.UUID(current_user["sub"])
+        rubric = await db.get(Rubric, rubric_uuid)
+        if not rubric:
+            return error_response(404, "NOT_FOUND", f"Rubric '{request.rubric_id}' not found")
+        if rubric.instructor_id != instructor_id:
+            return error_response(403, "FORBIDDEN", "You do not own this rubric")
 
     assignment = await create_assignment(
         db,
@@ -114,6 +135,11 @@ async def get_assignment_endpoint(
             code="NOT_FOUND",
             message=f"Assignment '{assignment_id}' not found",
         )
+    current_user_id = _current_user_id(current_user)
+    if current_user_id is None:
+        return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
+    if not _is_admin(current_user) and assignment.instructor_id != current_user_id:
+        return error_response(403, "FORBIDDEN", "You do not own this assignment")
 
     return success_response(_assignment_to_dict(assignment))
 
@@ -133,9 +159,8 @@ async def delete_assignment_endpoint(
     if not assignment:
         return error_response(404, "NOT_FOUND", f"Assignment '{assignment_id}' not found")
 
-    try:
-        current_user_id = uuid.UUID(str(current_user["sub"]))
-    except (KeyError, ValueError, TypeError):
+    current_user_id = _current_user_id(current_user)
+    if current_user_id is None:
         return error_response(401, "AUTH_ERROR", "Invalid user identity in token.")
 
     if assignment.instructor_id != current_user_id:

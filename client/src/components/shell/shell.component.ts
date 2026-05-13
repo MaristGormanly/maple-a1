@@ -14,7 +14,8 @@ export class ShellComponent {
   private auth = inject(AuthService);
 
   get currentUserEmail(): string {
-    return this.auth.getClaims()?.sub ?? 'instructor@marist.edu';
+    const claims = this.auth.getClaims();
+    return claims?.email ?? claims?.sub ?? 'instructor@marist.edu';
   }
 
   get currentUserRole(): string {
@@ -22,8 +23,9 @@ export class ShellComponent {
   }
 
   get userInitials(): string {
-    const local = this.currentUserEmail.split('@')[0];
-    return local.slice(0, 2).toUpperCase();
+    const claims = this.auth.getClaims();
+    const source = claims?.name ?? this.currentUserEmail.split('@')[0];
+    return source.slice(0, 2).toUpperCase();
   }
 
   logout(): void {

@@ -8,11 +8,18 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.routers.settings import (
+    AccountDeleteRequest,
+    AccountUpdateRequest,
     GitHubSettingsRequest,
+    PasswordUpdateRequest,
+    delete_account,
     delete_github_settings,
+    get_account_information,
     get_github_settings,
     get_style_guide_references,
     put_github_settings,
+    update_account_information,
+    update_account_password,
 )
 from app.services.github_settings import GitHubSettingsError, get_required_github_pat_for_instructor
 
@@ -185,6 +192,131 @@ class GitHubSettingsRouterTests(unittest.IsolatedAsyncioTestCase):
         payload = _payload(response)
         self.assertTrue(payload["success"])
         self.assertEqual(payload["data"]["references"], [])
+
+
+class AccountSettingsRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_get_account_returns_profile_without_password_hash(self) -> None:
+        user = SimpleNamespace(
+            id=uuid.uuid4(),
+            name="Elena Marsh",
+            email="elena@marist.edu",
+            username="emarsh",
+            school="Marist",
+            role="Instructor",
+            created_at=None,
+            updated_at=None,
+        )
+
+        response = await get_account_information(
+            db=_db_returning(user),
+            current_user={"sub": str(user.id), "role": "Instructor"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["name"], "Elena Marsh")
+        self.assertEqual(payload["data"]["email"], "elena@marist.edu")
+        self.assertNotIn("password_hash", payload["data"])
+
+    async def test_update_account_saves_profile_fields(self) -> None:
+        user = SimpleNamespace(
+            id=uuid.uuid4(),
+            name="Elena Marsh",
+            email="old@marist.edu",
+            username="oldname",
+            school=None,
+            role="Instructor",
+            created_at=None,
+            updated_at=None,
+        )
+        db = AsyncMock()
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+        conflict_result = MagicMock()
+        conflict_result.scalar_one_or_none.return_value = None
+        db.execute = AsyncMock(side_effect=[user_result, conflict_result])
+        db.commit = AsyncMock()
+        db.refresh = AsyncMock()
+
+        response = await update_account_information(
+            AccountUpdateRequest(
+                name="Elena M.",
+                email="New@Marist.edu",
+                username="newname",
+                school="School of CS",
+            ),
+            db=db,
+            current_user={"sub": str(user.id), "role": "Instructor"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertEqual(user.name, "Elena M.")
+        self.assertEqual(user.email, "new@marist.edu")
+        self.assertEqual(user.username, "newname")
+        self.assertEqual(user.school, "School of CS")
+
+    @patch("app.routers.settings.hash_password", side_effect=lambda p: f"hashed::{p}")
+    @patch("app.routers.settings.verify_password", return_value=True)
+    async def test_update_password_requires_current_password(self, _verify, _hash) -> None:
+        user = SimpleNamespace(
+            id=uuid.uuid4(),
+            email="elena@marist.edu",
+            role="Instructor",
+            password_hash="hashed::oldpassword",
+        )
+        db = _db_returning(user)
+        db.commit = AsyncMock()
+
+        response = await update_account_password(
+            PasswordUpdateRequest(
+                current_password="oldpassword",
+                new_password="newpassword",
+            ),
+            db=db,
+            current_user={"sub": str(user.id), "role": "Instructor"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["data"]["updated"])
+        self.assertEqual(user.password_hash, "hashed::newpassword")
+
+    async def test_delete_account_requires_confirmation_text(self) -> None:
+        user = SimpleNamespace(id=uuid.uuid4(), email="elena@marist.edu", role="Instructor")
+
+        response = await delete_account(
+            AccountDeleteRequest(confirmation="delete"),
+            db=_db_returning(user),
+            current_user={"sub": str(user.id), "role": "Instructor"},
+        )
+
+        payload = _payload(response)
+        self.assertFalse(payload["success"])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(payload["error"]["code"], "VALIDATION_ERROR")
+
+    async def test_delete_account_deletes_current_user(self) -> None:
+        user = SimpleNamespace(id=uuid.uuid4(), email="elena@marist.edu", role="Instructor")
+        db = AsyncMock()
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = user
+        rubric_result = MagicMock()
+        rubric_result.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[user_result, rubric_result])
+        db.delete = AsyncMock()
+        db.commit = AsyncMock()
+
+        response = await delete_account(
+            AccountDeleteRequest(confirmation="I want to delete my account"),
+            db=db,
+            current_user={"sub": str(user.id), "role": "Instructor"},
+        )
+
+        payload = _payload(response)
+        self.assertTrue(payload["success"])
+        db.delete.assert_awaited_once_with(user)
+        db.commit.assert_awaited_once()
 
 
 class GitHubSettingsServiceTests(unittest.IsolatedAsyncioTestCase):

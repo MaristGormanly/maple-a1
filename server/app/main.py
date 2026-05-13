@@ -475,6 +475,22 @@ async def evaluate_submission(
             message=str(exc),
         ) from exc
 
+    if str(current_user.get("role", "")).strip().lower() not in {"instructor", "admin"}:
+        raise MapleAPIError(
+            status_code=403,
+            code="FORBIDDEN",
+            message="Operation requires Instructor role.",
+        )
+
+    try:
+        student_id = UUID(current_user["sub"])
+    except (ValueError, KeyError):
+        raise MapleAPIError(
+            status_code=401,
+            code="AUTH_ERROR",
+            message="Invalid user identity in token.",
+        )
+
     if rubric_id and rubric is None:
         try:
             _rid = UUID(rubric_id)
@@ -491,6 +507,15 @@ async def evaluate_submission(
                 status_code=404,
                 code="NOT_FOUND",
                 message=f"Rubric '{rubric_id}' not found or has no stored file",
+            )
+        if (
+            str(current_user.get("role", "")).strip().lower() != "admin"
+            and db_rubric.instructor_id != student_id
+        ):
+            raise MapleAPIError(
+                status_code=403,
+                code="FORBIDDEN",
+                message="You do not own this rubric.",
             )
         stored_files = list(_RUBRICS_UPLOADS_DIR.glob(f"{rubric_id}_*"))
         if not stored_files:
@@ -538,15 +563,6 @@ async def evaluate_submission(
             message=str(exc),
         ) from exc
 
-    try:
-        student_id = UUID(current_user["sub"])
-    except (ValueError, KeyError):
-        raise MapleAPIError(
-            status_code=401,
-            code="AUTH_ERROR",
-            message="Invalid user identity in token.",
-        )
-
     parsed_assignment_id: UUID | None = None
     if assignment_id:
         try:
@@ -558,12 +574,21 @@ async def evaluate_submission(
                 message="assignment_id must be a valid UUID.",
             )
         try:
-            await validate_assignment_exists(db, parsed_assignment_id)
+            assignment = await validate_assignment_exists(db, parsed_assignment_id)
         except ValueError:
             raise MapleAPIError(
                 status_code=404,
                 code="NOT_FOUND",
                 message=f"Assignment '{assignment_id}' does not exist.",
+            )
+        if (
+            str(current_user.get("role", "")).strip().lower() != "admin"
+            and assignment.instructor_id != student_id
+        ):
+            raise MapleAPIError(
+                status_code=403,
+                code="FORBIDDEN",
+                message="You do not own this assignment.",
             )
 
     try:

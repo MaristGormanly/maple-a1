@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..models.assignment import Assignment
 from ..models.evaluation_result import EvaluationResult
 from ..models.submission import Submission
 
@@ -83,7 +84,10 @@ async def list_submissions(
         )
         .order_by(Submission.created_at.desc())
     )
-    if role.strip().lower() not in ("instructor", "admin"):
+    normalized_role = role.strip().lower()
+    if normalized_role == "instructor":
+        q = q.join(Submission.assignment).where(Assignment.instructor_id == user_id)
+    elif normalized_role not in ("admin",):
         q = q.where(Submission.student_id == user_id)
     result = await db.execute(q)
     return list(result.scalars().all())
