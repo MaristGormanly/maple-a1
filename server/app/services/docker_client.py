@@ -33,6 +33,32 @@ class ContainerResult:
     container_runtime_version: int | None = None
 
 
+def _install_prelude(profile) -> str | None:
+    """Shell snippet that installs the test runner + project deps for *profile*.
+
+    Returns None when the language image already ships everything needed
+    (e.g. Maven, where ``mvn test`` resolves its own dependencies).
+    """
+    if not profile.install_command:
+        return None
+    if profile.language == "python":
+        return (
+            "pip install --no-cache-dir pytest"
+            " && ((test -f requirements.txt"
+            " && pip install --no-cache-dir -r requirements.txt)"
+            " || (test -f server/requirements.txt"
+            " && pip install --no-cache-dir -r server/requirements.txt)"
+            " || true)"
+        )
+    if profile.language in {"javascript", "typescript"}:
+        return (
+            "test -f package.json"
+            " && npm ci --ignore-scripts"
+            " || true"
+        )
+    return profile.install_command
+
+
 def _build_shell_command(profile) -> list[str]:
     """Build a composite shell command from the sandbox profile.
 
@@ -42,25 +68,9 @@ def _build_shell_command(profile) -> list[str]:
     """
     parts: list[str] = ["cd /workspace/tests"]
 
-    if profile.install_command:
-        if profile.language == "python":
-            # Always install the test runner, then try project deps at root or server/.
-            parts.append(
-                "pip install --no-cache-dir pytest"
-                " && ((test -f requirements.txt"
-                " && pip install --no-cache-dir -r requirements.txt)"
-                " || (test -f server/requirements.txt"
-                " && pip install --no-cache-dir -r server/requirements.txt)"
-                " || true)"
-            )
-        elif profile.language in {"javascript", "typescript"}:
-            parts.append(
-                "test -f package.json"
-                " && npm ci --ignore-scripts"
-                " || true"
-            )
-        else:
-            parts.append(profile.install_command)
+    prelude = _install_prelude(profile)
+    if prelude is not None:
+        parts.append(prelude)
 
     # Expose server/ to sys.path so local packages (e.g. `app`) are importable
     # without being pip-installed, covering repos with a server/ subdirectory layout.
@@ -110,9 +120,15 @@ async def run_container(
             r' -o -path "*/build/test-results/*.xml" \)'
             r' -exec cat {} \; 2>/dev/null'
         )
+        prelude = _install_prelude(profile)
+        prelude_clause = f" && {prelude}" if prelude else ""
         inner = (
-            f"cp -a /workspace/source/. /workspace/build/"
+            # cp -R (not -a) avoids preserving host ownership; cap_drop=ALL
+            # strips CAP_CHOWN so `-a`'s ownership-preserve calls fail on Linux
+            # bind mounts whose source files belong to a non-root host user.
+            f"cp -R /workspace/source/. /workspace/build/"
             f" && cd /workspace/build/{safe_dir}"
+            f"{prelude_clause}"
             f" && {discovered_command}"
             f"; maple_status=$?"
             f"{extract_xml}"

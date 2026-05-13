@@ -3,7 +3,12 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.services.docker_client import ContainerResult, _build_shell_command, run_container
+from app.services.docker_client import (
+    ContainerResult,
+    _build_shell_command,
+    _install_prelude,
+    run_container,
+)
 from app.services.docker_runner import ContainerConfig
 from app.services.docker_runner import ContainerResult as RunnerResult
 from app.services.sandbox_images import SANDBOX_PROFILES, get_sandbox_profile
@@ -126,6 +131,105 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         self.assertIn("maple_status=$?", command)
         self.assertIn("find .", command)
         self.assertTrue(command.endswith("exit $maple_status"))
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_python_installs_pytest(self, mock_run) -> None:
+        # Regression: prod slim images ship without pytest; auto-discover must
+        # install it before running the discovered command, otherwise the
+        # container exits 1 instantly and the AI pipeline sees tests=0.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "python",
+            "/host/student",
+            None,
+            discovered_command="python -m pytest",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertIn("pip install --no-cache-dir pytest", command)
+        self.assertLess(
+            command.index("pip install"),
+            command.index("python -m pytest"),
+            "install prelude must run before the discovered command",
+        )
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_node_runs_npm_ci(self, mock_run) -> None:
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "javascript",
+            "/host/student",
+            None,
+            discovered_command="npx jest",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertIn("npm ci --ignore-scripts", command)
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_uses_cp_R_not_cp_a(self, mock_run) -> None:
+        # Regression: `cp -a` preserves ownership, which needs CAP_CHOWN. The
+        # sandbox runs with cap_drop=ALL, so on Linux hosts whose bind-mount
+        # sources are owned by a non-root user (prod: UID 1000 maple), `cp -a`
+        # short-circuits the whole && chain and the container exits 1 in <1s.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "python",
+            "/host/student",
+            None,
+            discovered_command="python -m pytest",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertIn("cp -R /workspace/source/.", command)
+        self.assertNotIn("cp -a ", command)
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_java_has_no_prelude(self, mock_run) -> None:
+        # Maven images ship with `mvn`, no install step needed.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "java",
+            "/host/student",
+            None,
+            discovered_command="mvn test",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertNotIn("pip install", command)
+        self.assertNotIn("npm ci", command)
+
+
+class TestInstallPrelude(unittest.TestCase):
+    def test_python_prelude_installs_pytest_then_requirements(self) -> None:
+        prelude = _install_prelude(SANDBOX_PROFILES["python"])
+        self.assertIsNotNone(prelude)
+        self.assertIn("pip install --no-cache-dir pytest", prelude)
+        self.assertIn("requirements.txt", prelude)
+
+    def test_java_prelude_is_none(self) -> None:
+        self.assertIsNone(_install_prelude(SANDBOX_PROFILES["java"]))
+
+    def test_javascript_prelude_uses_npm_ci(self) -> None:
+        prelude = _install_prelude(SANDBOX_PROFILES["javascript"])
+        self.assertIsNotNone(prelude)
+        self.assertIn("npm ci --ignore-scripts", prelude)
 
 
 if __name__ == "__main__":
