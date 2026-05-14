@@ -151,17 +151,3 @@ Based on May 2026 pricing and a 100-student pilot (approx. 500 evaluations/month
 
 AI tools (Gemini CLI, Claude Code) were used for code scaffolding, integration debugging, and documentation synchronization. Prompt logs are available in `prompts/dev/`.
 
-:** End-to-end evaluation flow from student submission to instructor approval and final grade release.
-
-## Team Members
-
-| Name | Primary Responsibilities |
-|---|---|
-| Jayden | Infrastructure, Docker Sandbox, LLM Service, RAG, Linters |
-| Dom | Backend API, Database, Pipeline Logic, AI Evaluation |
-| Sylvie | Repository Ingestion, API Contracts, Angular UI |
-
-## AI Disclosure
-
-AI tools (Gemini CLI, Claude Code) were used for code scaffolding, integration debugging, and documentation synchronization. Prompt logs are available in `prompts/dev/`.
-
