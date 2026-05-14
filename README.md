@@ -86,6 +86,33 @@ MAPLE A1 is deployed on a DigitalOcean Droplet with automated CI/CD. The API is 
 *   **Experimental:** C++ and TypeScript/JavaScript support (implemented but requires additional debugging for reliability); RAG for C++ (active but untested at scale).
 *   **Verified:** End-to-end evaluation flow for Python and Java from student submission to instructor approval and final grade release.
 
+## Quick Start Guide
+
+Follow these steps to get your first automated evaluation running in MAPLE A1.
+
+### 1. Authentication & Initial Setup
+*   **Login:** Access the application at [https://maple-a1.com](https://maple-a1.com) and sign in with your instructor account.
+*   **Configure GitHub:** Navigate to **Settings → GitHub Connections**. You must provide your **GitHub Username** and a **Personal Access Token (PAT)** with repository read access. MAPLE A1 uses this token to clone student repositories into the secure sandbox.
+
+### 2. Create an Assignment
+*   Navigate to **Assignments → New**.
+*   **Test Mode:** Choose "Instructor suite" to provide a link to your own test repository, or "Auto-discover" to let the AI find and run tests built into student repos.
+*   **Quality Gates:** Toggle **Enable style and code-quality review** to activate Pass 2 of the AI pipeline (linter-backed analysis).
+*   **Save:** Click "Create assignment" and copy the generated **Assignment ID**.
+
+### 3. Submit for Evaluation
+*   Navigate to **Submissions → New**.
+*   **Student Repo:** Provide the student's GitHub URL.
+*   **Grading Standard:** Enter the **Assignment ID** and upload your **Rubric** file (.json, .txt, or .pdf).
+*   **Submit:** Click "Submit for evaluation" to start the asynchronous pipeline.
+
+### 4. Monitor & Review Results
+*   **Poll Status:** You will be redirected to the **Status Page**. Watch as the pipeline moves from `Testing` to `Evaluating`.
+*   **Analyze Feedback:** Once the status is `Awaiting Review`, inspect the **Criteria Scores** and **Recommendations** (featuring Git-style inline diffs).
+*   **Instructor Approval:**
+    *   Click **Approve & release** to finalize the AI feedback.
+    *   Alternatively, click **Override** to manually adjust scores, add private instructor notes, or leave a custom comment for the student.
+
 ## Production Access
 
 The application is deployed and available for testing at the following location:
