@@ -86,6 +86,32 @@ MAPLE A1 is deployed on a DigitalOcean Droplet with automated CI/CD. The API is 
 *   **Experimental:** C++ and TypeScript/JavaScript support (implemented but requires additional debugging for reliability); RAG for C++ (active but untested at scale).
 *   **Verified:** End-to-end evaluation flow for Python and Java from student submission to instructor approval and final grade release.
 
+## Production Access
+
+The application is deployed and available for testing at the following location:
+
+*   **Production URL:** [https://maple-a1.com](https://maple-a1.com)
+*   **API Documentation:** [https://api.maple-a1.com/docs](https://api.maple-a1.com/docs)
+
+Instructors can log in via GitHub to manage assignments and review student submissions.
+
+## Estimated Operating Costs
+
+Based on May 2026 pricing and a 100-student pilot (approx. 500 evaluations/month), the estimated monthly operating cost for MAPLE A1 is **~$105–$125**.
+
+| Item | Service Detail | Est. Cost/Mo |
+| :--- | :--- | :--- |
+| **Backend Compute** | DigitalOcean Droplet (4GB RAM, 2vCPU, Shared) | $24.00 |
+| **Managed Database** | DigitalOcean PostgreSQL (1 Node, 2GB RAM, 25GB SSD) | $22.00 |
+| **Frontend Hosting** | DigitalOcean App Platform (Static Site) | $5.00 |
+| **Primary LLM** | Gemini 3.1 Pro (Passes 1 & 3) | $40.00 – $55.00 |
+| **Style/Utility LLM** | Gemini 3.1 Flash-Lite (Pass 2) | $10.00 – $15.00 |
+| **Fallback LLM** | GPT-4o (Standard Tier) | $3.00 – $5.00 |
+| **Domain/SSL** | Annualized (maple-a1.com) | ~$1.00 |
+| **Total** | | **~$105 – $125** |
+
+*Note: LLM costs vary based on repository size and rubric complexity. Costs can be further optimized via SHA-based caching and Batch API processing.*
+
 ## Team Members
 
 | Name | Primary Responsibilities |
