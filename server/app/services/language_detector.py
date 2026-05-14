@@ -33,10 +33,10 @@ def detect_language_version(
     root = Path(repo_path)
 
     for detector in (
-        _detect_python,
         _detect_node,
         _detect_java,
         _detect_cpp,
+        _detect_python,  # broad *.py glob — last resort so C++/Java repos with helper scripts aren't misclassified
     ):
         result = detector(root)
         if result is not None:
@@ -143,16 +143,21 @@ _CMAKE_STD = re.compile(r"set\s*\(\s*CMAKE_CXX_STANDARD\s+(\d+)", re.IGNORECASE)
 
 def _detect_cpp(root: Path) -> dict | None:
     cmake = root / "CMakeLists.txt"
-    if not cmake.is_file():
-        return None
-    try:
-        text = cmake.read_text(encoding="utf-8")
-    except Exception:
-        return {"language": "cpp", "version": None, "source": "CMakeLists.txt"}
+    if cmake.is_file():
+        try:
+            text = cmake.read_text(encoding="utf-8")
+        except Exception:
+            return {"language": "cpp", "version": None, "source": "CMakeLists.txt"}
+        m = _CMAKE_STD.search(text)
+        return {"language": "cpp", "version": m.group(1) if m else None, "source": "CMakeLists.txt"}
 
-    m = _CMAKE_STD.search(text)
-    version = m.group(1) if m else None
-    return {"language": "cpp", "version": version, "source": "CMakeLists.txt"}
+    # Fallback: C++ source files without a root CMakeLists.txt (Makefile-based
+    # or header-only repos that keep build files in subdirectories).
+    cpp_exts = {".cpp", ".cc", ".cxx"}
+    if any(p.suffix.lower() in cpp_exts for p in root.rglob("*") if p.is_file()):
+        return {"language": "cpp", "version": None, "source": "*.cpp"}
+
+    return None
 
 
 # Strips operator prefixes like >=, ^, ~, ==

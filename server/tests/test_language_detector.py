@@ -151,5 +151,55 @@ class DetectLanguageVersionTests(unittest.TestCase):
         self.assertIsNone(result["version"])
 
 
+class TestDetectorPriority(unittest.TestCase):
+    """Regression tests for detector ordering — C++/Java must win over Python's *.py glob."""
+
+    def test_cpp_repo_with_python_helper_scripts_detects_cpp(self) -> None:
+        # ETLCPP/etl regression: C++ library ships Python build scripts in a
+        # subdirectory. The old detector order (python first) returned "python".
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "CMakeLists.txt").write_text(
+                "cmake_minimum_required(VERSION 3.14)\nproject(etl)\n",
+                encoding="utf-8",
+            )
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (scripts / "build.py").write_text("# helper", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "cpp")
+        self.assertEqual(result["source"], "CMakeLists.txt")
+
+    def test_cpp_repo_without_cmake_detects_cpp_via_source_files(self) -> None:
+        # Repos that use Makefiles or store CMakeLists.txt in a subdirectory
+        # should still be detected as C++ via the *.cpp fallback.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            src = root / "src"
+            src.mkdir()
+            (src / "main.cpp").write_text("int main() { return 0; }\n", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "cpp")
+        self.assertEqual(result["source"], "*.cpp")
+
+    def test_java_repo_with_python_scripts_detects_java(self) -> None:
+        # Maven repo that bundles Python tooling must not be misclassified.
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (scripts / "setup.py").write_text("# helper", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "java")
+
+    def test_pure_python_repo_still_detected_after_reorder(self) -> None:
+        # Reordering must not break plain Python repos.
+        with TemporaryDirectory() as tmp:
+            (Path(tmp) / "requirements.txt").write_text("pytest\n", encoding="utf-8")
+            result = detect_language_version(tmp)
+        self.assertEqual(result["language"], "python")
+
+
 if __name__ == "__main__":
     unittest.main()

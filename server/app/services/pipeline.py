@@ -106,6 +106,7 @@ _LANGUAGE_EXTENSIONS: dict[str, tuple[str, ...]] = {
     "javascript": (".js", ".jsx", ".mjs", ".cjs"),
     "typescript": (".ts", ".tsx"),
     "java": (".java",),
+    "cpp": (".cpp", ".hpp", ".h", ".cc", ".cxx"),
 }
 
 
