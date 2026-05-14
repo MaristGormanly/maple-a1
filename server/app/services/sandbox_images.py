@@ -162,10 +162,11 @@ _CPP_PROFILE = SandboxProfile(
     ),
     working_dir="/workspace",
     runtime_version=None,
-    # CMake builds are compile-heavy; mirror the Java budget.
-    default_timeout_seconds=600,
+    # Large C++ projects like ETLCPP compile hundreds of translation units
+    # before tests run.  They need a wider budget than Java/Maven.
+    default_timeout_seconds=1800,
     mem_limit="2g",
-    cpu_quota=100_000,
+    cpu_quota=200_000,
 )
 
 # Per-language profile lists (ordered ascending by runtime_version).

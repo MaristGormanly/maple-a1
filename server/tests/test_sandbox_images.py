@@ -52,7 +52,12 @@ class TestSandboxProfiles(unittest.TestCase):
                 p = SANDBOX_PROFILES[lang]
                 self.assertGreaterEqual(p.default_timeout_seconds, 600)
                 self.assertEqual(p.mem_limit, "2g")
-                self.assertEqual(p.cpu_quota, 100_000)
+                self.assertGreaterEqual(p.cpu_quota, 100_000)
+
+    def test_cpp_profile_gets_extra_large_compile_budget(self) -> None:
+        p = SANDBOX_PROFILES["cpp"]
+        self.assertEqual(p.default_timeout_seconds, 1800)
+        self.assertEqual(p.cpu_quota, 200_000)
 
     def test_interpreted_languages_keep_default_budget(self) -> None:
         for lang in ("python", "javascript", "typescript"):
