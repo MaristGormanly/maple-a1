@@ -129,8 +129,49 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         command = config.command[2]
         self.assertIn("mvn test", command)
         self.assertIn("maple_status=$?", command)
-        self.assertIn("find .", command)
         self.assertTrue(command.endswith("exit $maple_status"))
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_merges_stderr_into_stdout(self, mock_run) -> None:
+        # exec 2>&1 at the start of the script ensures Maven's stderr output
+        # (build logs, test summaries) lands in the stdout buffer captured by
+        # log_normalizer, so the test parser sees the full [INFO] summary tail.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "java",
+            "/host/student",
+            None,
+            discovered_command="mvn test",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertTrue(command.startswith("exec 2>&1"), "stderr must be merged before cp")
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_does_not_cat_surefire_xml(self, mock_run) -> None:
+        # Catting 741 surefire XML files (~2 MB) pushes Maven's [INFO] summary
+        # into the log_normalizer dead-zone, resulting in tests=0.  The
+        # surefire XML extraction was removed; Maven's text summary is now
+        # the sole signal and always lands in the 5 KB tail window.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "java",
+            "/host/student",
+            None,
+            discovered_command="mvn test",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertNotIn("surefire-reports", command)
+        self.assertNotIn("find .", command)
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
     async def test_auto_discover_python_installs_pytest(self, mock_run) -> None:

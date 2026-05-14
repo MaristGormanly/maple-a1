@@ -422,10 +422,18 @@ def _detect_maven_surefire(text: str) -> bool:
 def _parse_maven_surefire(text: str) -> list[dict]:
     """Parse Maven's per-class text summary into individual test entries.
 
-    When surefire XML lands in stdout (via the find/cat append), the JUnit
-    parser takes precedence.  This handles the fallback case where only the
-    Maven console summary is available.
+    Prefers named per-class lines (``- in ClassName``) over the aggregate
+    summary line.  When log_normalizer's 7 KB window keeps only the tail of a
+    long Maven run, the tail contains the final per-class lines plus the
+    aggregate; using the aggregate's count would generate thousands of
+    ``unknown#N`` synthetic entries that overwhelm the LLM payload.  If only
+    the aggregate is visible (all per-class lines were in the discarded middle),
+    fall back to it so the AI still sees a total count.
     """
+    all_matches = list(_MAVEN_CLASS_LINE.finditer(text))
+    named_matches = [m for m in all_matches if m.group(5)]
+    source_matches = named_matches if named_matches else all_matches
+
     # Collect per-method failures for richer naming
     failed_methods: dict[str, str] = {}
     for m in _MAVEN_METHOD_FAIL.finditer(text):
@@ -434,7 +442,7 @@ def _parse_maven_surefire(text: str) -> list[dict]:
         failed_methods[fq_name] = status
 
     tests: list[dict] = []
-    for m in _MAVEN_CLASS_LINE.finditer(text):
+    for m in source_matches:
         total = int(m.group(1))
         failures = int(m.group(2))
         errors = int(m.group(3))

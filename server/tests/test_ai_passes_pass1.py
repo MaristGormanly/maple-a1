@@ -246,5 +246,27 @@ class RunPass1FailureTests(unittest.TestCase):
         )
 
 
+class TestCapTests(unittest.TestCase):
+    def test_short_list_unchanged(self) -> None:
+        from app.services.ai_passes import _cap_tests
+        tests = [{"name": f"t{i}", "status": "passed"} for i in range(10)]
+        self.assertEqual(_cap_tests(tests, 500), tests)
+
+    def test_failures_prioritized(self) -> None:
+        from app.services.ai_passes import _cap_tests
+        passed = [{"name": f"p{i}", "status": "passed"} for i in range(600)]
+        failed = [{"name": f"f{i}", "status": "failed"} for i in range(5)]
+        result = _cap_tests(failed + passed, 500)
+        self.assertEqual(len(result), 500)
+        fail_names = {t["name"] for t in result if t["status"] == "failed"}
+        self.assertEqual(fail_names, {f"f{i}" for i in range(5)})
+
+    def test_cap_at_limit(self) -> None:
+        from app.services.ai_passes import _cap_tests
+        tests = [{"name": f"t{i}", "status": "passed"} for i in range(9267)]
+        result = _cap_tests(tests, 500)
+        self.assertEqual(len(result), 500)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -117,28 +117,20 @@ async def run_container(
         # cmake/...) can write its build artifacts in-place like normal.
         safe_dir = discovered_working_dir.lstrip("/") or "."
 
-        # After the discovered command, dump any JUnit-format XML test reports
-        # to stdout so the parser sees real per-test results.  Stdout-native
-        # frameworks (pytest, jest, gtest) ignore this; Maven Surefire and
-        # Gradle write XML to disk and need this extraction.
-        extract_xml = (
-            r' ; find . \( -path "*/target/surefire-reports/*.xml"'
-            r' -o -path "*/build/test-results/*/*.xml"'
-            r' -o -path "*/build/test-results/*.xml" \)'
-            r' -exec cat {} \; 2>/dev/null'
-        )
         prelude = _install_prelude(profile)
         prelude_clause = f" && {prelude}" if prelude else ""
         inner = (
+            # Merge stderr into stdout so Maven's build output (which lands on
+            # stderr in some Maven versions) is captured by log_normalizer.
+            "exec 2>&1"
             # cp -R (not -a) avoids preserving host ownership; cap_drop=ALL
             # strips CAP_CHOWN so `-a`'s ownership-preserve calls fail on Linux
             # bind mounts whose source files belong to a non-root host user.
-            f"cp -R /workspace/source/. /workspace/build/"
+            f" ; cp -R /workspace/source/. /workspace/build/"
             f" && cd /workspace/build/{safe_dir}"
             f"{prelude_clause}"
             f" && {discovered_command}"
             f"; maple_status=$?"
-            f"{extract_xml}"
             f"; exit $maple_status"
         )
         command = ["sh", "-c", inner]

@@ -159,6 +159,15 @@ def _clamp_line_ranges(instance: dict) -> dict:
 LLMCompleteCallable = Callable[..., Awaitable[Any]]
 
 
+def _cap_tests(tests: list[dict], limit: int) -> list[dict]:
+    """Return at most *limit* entries, prioritising failures and errors."""
+    if len(tests) <= limit:
+        return tests
+    priority = [t for t in tests if t.get("status") in ("failed", "error")]
+    rest = [t for t in tests if t.get("status") not in ("failed", "error")]
+    return (priority + rest)[:limit]
+
+
 def _build_pass1_user_message(
     *,
     parsed_test_results: dict,
@@ -182,7 +191,7 @@ def _build_pass1_user_message(
             "errors": parsed_test_results.get("errors", 0),
             "skipped": parsed_test_results.get("skipped", 0),
         },
-        "tests": parsed_test_results.get("tests", []),
+        "tests": _cap_tests(parsed_test_results.get("tests", []), 500),
         "exit_code": exit_code,
         "resource_constraint_metadata": resource_constraint_metadata,
         "raw_output_truncated": parsed_test_results.get("raw_output_truncated", False),

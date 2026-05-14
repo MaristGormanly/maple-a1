@@ -129,5 +129,54 @@ class ParseTestResultsTests(unittest.TestCase):
         self.assertTrue(result["raw_output_truncated"])
 
 
+class TestMavenSurefireParser(unittest.TestCase):
+    """Regression tests for _parse_maven_surefire aggregate-line handling."""
+
+    def _maven_output(self, class_lines: list[str], aggregate: str) -> str:
+        return "\n".join(class_lines) + "\n" + aggregate + "\n"
+
+    def test_named_class_lines_used_over_aggregate(self) -> None:
+        # When per-class lines AND aggregate are both visible (normal tail),
+        # the parser must use only the named entries — not generate 9267
+        # "unknown#N" synthetic duplicates from the aggregate.
+        output = (
+            "[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, "
+            "Time elapsed: 0.1 s - in com.example.FooTest\n"
+            "[INFO] Tests run: 8, Failures: 1, Errors: 0, Skipped: 0, "
+            "Time elapsed: 0.2 s - in com.example.BarTest\n"
+            "[INFO] Tests run: 20, Failures: 1, Errors: 0, Skipped: 0\n"  # aggregate
+        )
+        result = parse_test_results(output, "", 0)
+        self.assertEqual(result["framework"], "maven_surefire")
+        # Must NOT have 20 "unknown#N" entries from the aggregate
+        names = [t["name"] for t in result["tests"]]
+        self.assertFalse(any("unknown" in n for n in names), "aggregate must be skipped when named lines exist")
+        # Must have entries only from the two named classes
+        self.assertEqual(result["passed"], 12 + 7)  # 12 + (8-1)
+        self.assertEqual(result["failed"], 1)
+
+    def test_aggregate_only_fallback(self) -> None:
+        # When only the aggregate line is visible (all per-class lines were
+        # in the discarded middle of a truncated log), fall back to it so
+        # the AI still sees a total count.
+        output = "[INFO] Tests run: 50, Failures: 2, Errors: 1, Skipped: 3\n"
+        result = parse_test_results(output, "", 0)
+        self.assertEqual(result["framework"], "maven_surefire")
+        self.assertEqual(result["passed"], 44)
+        self.assertEqual(result["failed"], 2)
+        self.assertEqual(result["errors"], 1)
+        self.assertEqual(result["skipped"], 3)
+
+    def test_no_unknown_entries_when_named_present(self) -> None:
+        output = (
+            "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, "
+            "Time elapsed: 0.05 s - in com.example.AlphaTest\n"
+            "[INFO] Tests run: 9267, Failures: 0, Errors: 0, Skipped: 0\n"
+        )
+        result = parse_test_results(output, "", 0)
+        self.assertEqual(len(result["tests"]), 3)
+        self.assertTrue(all("com.example.AlphaTest" in t["name"] for t in result["tests"]))
+
+
 if __name__ == "__main__":
     unittest.main()
