@@ -152,23 +152,20 @@ _TYPESCRIPT_PROFILES: list[SandboxProfile] = [
 
 _CPP_PROFILE = SandboxProfile(
     language="cpp",
-    image="ubuntu:22.04",
-    install_command="apt-get update -qq && apt-get install -y -qq cmake g++ libgtest-dev 2>/dev/null",
+    image="maple-cpp-sandbox:22.04",
+    install_command=None,
     test_command=(
         "mkdir -p build"
-        " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug 2>&1"
-        " && cmake --build build --parallel 2>&1"
-        " && cd build && ctest --output-on-failure 2>&1"
+        " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DBUILD_TESTING=ON 2>&1"
+        " && cmake --build build --parallel 2 2>&1"
+        " && cd build && ctest --output-on-failure --verbose 2>&1"
     ),
     working_dir="/workspace",
     runtime_version=None,
-    # apt-get + cmake build is compile-heavy; mirror the Java budget.
+    # CMake builds are compile-heavy; mirror the Java budget.
     default_timeout_seconds=600,
     mem_limit="2g",
     cpu_quota=100_000,
-    # apt-get writes to /var/lib/dpkg and /var/lib/apt; read-only FS blocks
-    # package installation with exit_code=100 in under one second.
-    read_only=False,
 )
 
 # Per-language profile lists (ordered ascending by runtime_version).

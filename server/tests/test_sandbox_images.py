@@ -73,9 +73,13 @@ class TestSandboxProfiles(unittest.TestCase):
             with self.subTest(lang=lang):
                 self.assertTrue(profile.working_dir)
 
-    def test_cpp_profile_is_not_read_only(self) -> None:
-        # apt-get writes to /var/lib/dpkg; read_only=True causes exit_code=100
-        self.assertFalse(SANDBOX_PROFILES["cpp"].read_only)
+    def test_cpp_profile_uses_prebuilt_image(self) -> None:
+        p = SANDBOX_PROFILES["cpp"]
+        self.assertEqual(p.image, "maple-cpp-sandbox:22.04")
+        self.assertIsNone(p.install_command)
+        self.assertIn("-DBUILD_TESTS=ON", p.test_command)
+        self.assertIn("-DBUILD_TESTING=ON", p.test_command)
+        self.assertTrue(p.read_only)
 
     def test_non_cpp_profiles_are_read_only(self) -> None:
         for lang in ("python", "javascript", "typescript", "java"):

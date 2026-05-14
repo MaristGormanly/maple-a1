@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from app.services.docker_client import (
     ContainerResult,
     _build_shell_command,
+    _cpp_auto_discover_command,
     _install_prelude,
     run_container,
 )
@@ -153,10 +154,8 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
     async def test_auto_discover_cpp_uses_profile_test_command(self, mock_run) -> None:
-        # The test_discoverer sanitizer blocks && so the LLM can only emit a
-        # single binary path for C++ (e.g. ./test/etl_tests). We must override
-        # with the profile's cmake build+run chain so the source gets compiled
-        # before the tests are executed.
+        # The test_discoverer sanitizer blocks && so C++ auto-discover builds
+        # first, then resolves the named test executable under build/.
         mock_run.return_value = RunnerResult(
             exit_code=0, stdout="", stderr="", timed_out=False,
         )
@@ -171,12 +170,16 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
 
         command = mock_run.await_args[0][0].command[2]
         self.assertIn("cmake", command)
-        self.assertNotIn("./test/etl_tests", command)
+        self.assertIn("-DBUILD_TESTS=ON", command)
+        self.assertIn("-DBUILD_TESTING=ON", command)
+        self.assertIn("find build -type f -name etl_tests", command)
+        self.assertIn('"$cpp_candidate" -v', command)
+        self.assertIn("ctest --output-on-failure --verbose", command)
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
-    async def test_auto_discover_cpp_has_writable_root_fs(self, mock_run) -> None:
-        # apt-get writes to /var/lib/dpkg; a read-only root FS causes exit_code=100
-        # in under one second. C++ must run with read_only=False.
+    async def test_auto_discover_cpp_keeps_read_only_root_fs(self, mock_run) -> None:
+        # C++ dependencies are baked into maple-cpp-sandbox, so submitted-code
+        # containers keep the read-only root filesystem and cap_drop=ALL.
         mock_run.return_value = RunnerResult(
             exit_code=0, stdout="", stderr="", timed_out=False,
         )
@@ -190,7 +193,9 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         )
 
         config: ContainerConfig = mock_run.await_args[0][0]
-        self.assertFalse(config.read_only, "C++ container must not be read-only (apt-get needs writable /var/lib/dpkg)")
+        self.assertEqual(config.image, "maple-cpp-sandbox:22.04")
+        self.assertTrue(config.read_only)
+        self.assertEqual(config.cap_drop, ["ALL"])
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
     async def test_non_cpp_languages_keep_read_only_fs(self, mock_run) -> None:
@@ -358,6 +363,20 @@ class TestInstallPrelude(unittest.TestCase):
         prelude = _install_prelude(SANDBOX_PROFILES["javascript"])
         self.assertIsNotNone(prelude)
         self.assertIn("npm ci --ignore-scripts", prelude)
+
+    def test_cpp_prelude_is_none(self) -> None:
+        self.assertIsNone(_install_prelude(SANDBOX_PROFILES["cpp"]))
+
+
+class TestCppAutoDiscoverCommand(unittest.TestCase):
+    def test_enables_cmake_tests_and_preserves_discovered_args(self) -> None:
+        command = _cpp_auto_discover_command("./test/etl_tests -v")
+        self.assertIn("-DBUILD_TESTS=ON", command)
+        self.assertIn("-DBUILD_TESTING=ON", command)
+        self.assertIn("cmake --build build --parallel 2", command)
+        self.assertIn("find build -type f -name etl_tests", command)
+        self.assertIn('"$cpp_candidate" -v', command)
+        self.assertIn("ctest --output-on-failure --verbose", command)
 
 
 if __name__ == "__main__":

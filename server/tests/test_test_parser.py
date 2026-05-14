@@ -178,5 +178,40 @@ class TestMavenSurefireParser(unittest.TestCase):
         self.assertTrue(all("com.example.AlphaTest" in t["name"] for t in result["tests"]))
 
 
+class TestCppParsers(unittest.TestCase):
+    def test_unittestpp_verbose_output(self) -> None:
+        output = (
+            "[START #1] vector::construct\n"
+            "[PASSED  #1] vector::construct (0.0001 s)\n"
+            "[START #2] vector::bounds\n"
+            "test_vector.cpp:42:1: error: Failure in bounds: expected true\n"
+            "[FAILED  #2] vector::bounds (0.0002 s)\n"
+            "FAILURE: 1 out of 2 tests failed (1 failures).\n"
+        )
+        result = parse_test_results(output, "", 1)
+        self.assertEqual(result["framework"], "unittestpp")
+        self.assertEqual(result["passed"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual([t["name"] for t in result["tests"]], ["vector::construct", "vector::bounds"])
+
+    def test_unittestpp_summary_only(self) -> None:
+        result = parse_test_results("Success: 3 tests passed.\nTest time: 0.10 seconds.\n", "", 0)
+        self.assertEqual(result["framework"], "unittestpp")
+        self.assertEqual(result["passed"], 3)
+        self.assertEqual(len(result["tests"]), 3)
+
+    def test_ctest_summary_fallback(self) -> None:
+        output = (
+            "Test project /workspace/build\n"
+            "    Start 1: etl_unit_tests\n"
+            "1/1 Test #1: etl_unit_tests ................   Passed    1.23 sec\n"
+            "100% tests passed, 0 tests failed out of 1\n"
+        )
+        result = parse_test_results(output, "", 0)
+        self.assertEqual(result["framework"], "ctest")
+        self.assertEqual(result["passed"], 1)
+        self.assertEqual(result["failed"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

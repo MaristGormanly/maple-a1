@@ -86,6 +86,11 @@ _LANG_BY_EXT: dict[str, str] = {
     ".ts": "typescript",
     ".tsx": "typescript",
     ".java": "java",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
 }
 
 _REGEX_LIMITATIONS: tuple[str, ...] = (
@@ -120,7 +125,7 @@ def extract_chunks(
             file is read from disk with UTF-8 decoding.
         language: Override the language inferred from the file
             extension (one of: ``python``, ``javascript``,
-            ``typescript``, ``java``).
+            ``typescript``, ``java``, ``cpp``).
         max_tokens: Maximum token budget per chunk before recursive
             splitting kicks in.
         min_tokens: Minimum token budget; adjacent chunks below this
@@ -143,6 +148,8 @@ def extract_chunks(
         raw = _extract_brace_language(str(path), text, language=detected)
     elif detected == "java":
         raw = _extract_brace_language(str(path), text, language="java")
+    elif detected == "cpp":
+        raw = _extract_brace_language(str(path), text, language="cpp")
     else:
         logger.warning("ast_chunker: unsupported language %s for %s", detected, path)
         return []
@@ -151,7 +158,7 @@ def extract_chunks(
 
 
 def supported_languages() -> tuple[str, ...]:
-    return ("python", "javascript", "typescript", "java")
+    return ("python", "javascript", "typescript", "java", "cpp")
 
 
 def regex_fallback_limitations() -> tuple[str, ...]:
@@ -339,6 +346,26 @@ _JAVA_METHOD_DECL = re.compile(
     re.MULTILINE,
 )
 
+# C++: class/struct declarations and ordinary functions.  This is a
+# conservative regex fallback so Pass 2/3 get useful evidence for C++ without
+# pretending to fully parse the language.
+_CPP_TYPE_DECL = re.compile(
+    r"^(?P<indent>[ \t]*)"
+    r"(?:template\s*<[^;{}]+>\s*)?"
+    r"(?:class|struct)\s+(?P<name>[A-Za-z_]\w*)"
+    r"(?:\s*[:<][^{;]*)?\s*\{",
+    re.MULTILINE,
+)
+_CPP_FUNCTION_DECL = re.compile(
+    r"^(?P<indent>[ \t]*)"
+    r"(?:template\s*<[^;{}]+>\s*)?"
+    r"(?:inline\s+|static\s+|constexpr\s+|virtual\s+|friend\s+|explicit\s+)*"
+    r"(?:[\w:<>~*&,\s]+\s+)+"
+    r"(?P<name>[A-Za-z_]\w*(?:::[A-Za-z_]\w*)?)\s*\([^;{}]*\)"
+    r"(?:\s*(?:const|noexcept|override|final))*\s*\{",
+    re.MULTILINE,
+)
+
 
 def _extract_brace_language(
     file_path: str, source: str, *, language: str
@@ -352,10 +379,15 @@ def _extract_brace_language(
             (_JS_ARROW_DECL, "function"),
             (_JS_CLASS_DECL, "class"),
         ]
-    else:  # java
+    elif language == "java":
         patterns = [
             (_JAVA_TYPE_DECL, "class"),
             (_JAVA_METHOD_DECL, "method"),
+        ]
+    else:  # cpp
+        patterns = [
+            (_CPP_TYPE_DECL, "class"),
+            (_CPP_FUNCTION_DECL, "function"),
         ]
 
     seen_starts: set[int] = set()
@@ -363,6 +395,8 @@ def _extract_brace_language(
         for match in pattern.finditer(source):
             start_line = source[: match.start()].count("\n") + 1
             if start_line in seen_starts:
+                continue
+            if kind == "function" and match.group("name") in {"if", "for", "while", "switch", "catch"}:
                 continue
             end_line = _find_brace_block_end(source, match.end() - 1)
             if end_line is None:

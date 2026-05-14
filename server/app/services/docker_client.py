@@ -12,6 +12,7 @@ Design-doc references:
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 
 from .docker_runner import ContainerConfig
@@ -81,6 +82,44 @@ def _build_shell_command(profile) -> list[str]:
     return ["sh", "-c", " && ".join(parts)]
 
 
+def _cpp_auto_discover_command(discovered_command: str) -> str:
+    """Build C++ projects, then prefer the discovered executable if available.
+
+    The test discoverer intentionally forbids shell operators, so it often
+    returns a bare executable path such as ``./test/etl_tests -v``.  CMake
+    projects need a configure/build phase first; after that, try to find the
+    named executable in ``build/`` and preserve any safe args.
+    """
+    try:
+        parts = shlex.split(discovered_command)
+    except ValueError:
+        parts = []
+
+    exe_name = ""
+    args: list[str] = []
+    if parts:
+        exe_name = parts[0].strip().rsplit("/", 1)[-1]
+        args = parts[1:]
+
+    quoted_exe = shlex.quote(exe_name)
+    quoted_args = " ".join(shlex.quote(arg) for arg in args)
+    run_discovered = ""
+    if exe_name:
+        run_discovered = (
+            f"; cpp_candidate=$(find build -type f -name {quoted_exe} -perm -111 | head -n 1)"
+            f"; if [ -n \"$cpp_candidate\" ]; then \"$cpp_candidate\" {quoted_args}; "
+            "cpp_status=$?; exit $cpp_status; fi"
+        )
+
+    return (
+        "mkdir -p build"
+        " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DBUILD_TESTING=ON 2>&1"
+        " && cmake --build build --parallel 2 2>&1"
+        f"{run_discovered}"
+        " && cd build && ctest --output-on-failure --verbose 2>&1"
+    )
+
+
 async def run_container(
     language: str,
     student_repo_path: str,
@@ -117,13 +156,10 @@ async def run_container(
         # cmake/...) can write its build artifacts in-place like normal.
         safe_dir = discovered_working_dir.lstrip("/") or "."
 
-        # C++ repos: the test_discoverer sanitizer blocks shell operators (&&)
-        # so the LLM can only emit a single binary path (e.g. ./test/etl_tests)
-        # rather than the cmake build+run chain the project actually needs.
-        # Use the profile's built-in test_command, which has the full compile →
-        # run lifecycle and is safe because it's already known-good.
+        # C++ repos: build first, then run a discovered test executable if the
+        # build produced one.  Otherwise fall back to verbose ctest.
         effective_command = (
-            profile.test_command
+            _cpp_auto_discover_command(discovered_command)
             if profile.language == "cpp"
             else discovered_command
         )
