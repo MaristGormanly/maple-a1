@@ -152,6 +152,58 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(command.startswith("exec 2>&1"), "stderr must be merged before cp")
 
     @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_cpp_uses_profile_test_command(self, mock_run) -> None:
+        # The test_discoverer sanitizer blocks && so the LLM can only emit a
+        # single binary path for C++ (e.g. ./test/etl_tests). We must override
+        # with the profile's cmake build+run chain so the source gets compiled
+        # before the tests are executed.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "cpp",
+            "/host/student",
+            None,
+            discovered_command="./test/etl_tests -v",
+            discovered_working_dir=".",
+        )
+
+        command = mock_run.await_args[0][0].command[2]
+        self.assertIn("cmake", command)
+        self.assertNotIn("./test/etl_tests", command)
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_auto_discover_cpp_has_writable_root_fs(self, mock_run) -> None:
+        # apt-get writes to /var/lib/dpkg; a read-only root FS causes exit_code=100
+        # in under one second. C++ must run with read_only=False.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+
+        await run_container(
+            "cpp",
+            "/host/student",
+            None,
+            discovered_command="./test/etl_tests -v",
+            discovered_working_dir=".",
+        )
+
+        config: ContainerConfig = mock_run.await_args[0][0]
+        self.assertFalse(config.read_only, "C++ container must not be read-only (apt-get needs writable /var/lib/dpkg)")
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_non_cpp_languages_keep_read_only_fs(self, mock_run) -> None:
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+        for lang in ("python", "java", "javascript"):
+            with self.subTest(lang=lang):
+                await run_container(lang, "/s", "/t")
+                config: ContainerConfig = mock_run.await_args[0][0]
+                self.assertTrue(config.read_only, f"{lang} must use read-only FS")
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
     async def test_auto_discover_does_not_cat_surefire_xml(self, mock_run) -> None:
         # Catting 741 surefire XML files (~2 MB) pushes Maven's [INFO] summary
         # into the log_normalizer dead-zone, resulting in tests=0.  The

@@ -32,6 +32,9 @@ class SandboxProfile:
     default_timeout_seconds: int = 120
     mem_limit: str = "256m"
     cpu_quota: int = 50_000  # 0.5 CPU at the standard 100_000 cpu_period
+    # C++ needs read_only=False so apt-get can write to /var/lib/dpkg and
+    # /var/lib/apt/lists; all other languages run with a read-only root FS.
+    read_only: bool = True
 
 
 _JAVA_TEST_COMMAND = (
@@ -163,6 +166,9 @@ _CPP_PROFILE = SandboxProfile(
     default_timeout_seconds=600,
     mem_limit="2g",
     cpu_quota=100_000,
+    # apt-get writes to /var/lib/dpkg and /var/lib/apt; read-only FS blocks
+    # package installation with exit_code=100 in under one second.
+    read_only=False,
 )
 
 # Per-language profile lists (ordered ascending by runtime_version).

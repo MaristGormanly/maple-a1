@@ -73,6 +73,15 @@ class TestSandboxProfiles(unittest.TestCase):
             with self.subTest(lang=lang):
                 self.assertTrue(profile.working_dir)
 
+    def test_cpp_profile_is_not_read_only(self) -> None:
+        # apt-get writes to /var/lib/dpkg; read_only=True causes exit_code=100
+        self.assertFalse(SANDBOX_PROFILES["cpp"].read_only)
+
+    def test_non_cpp_profiles_are_read_only(self) -> None:
+        for lang in ("python", "javascript", "typescript", "java"):
+            with self.subTest(lang=lang):
+                self.assertTrue(SANDBOX_PROFILES[lang].read_only)
+
     def test_profiles_are_frozen(self) -> None:
         p = SANDBOX_PROFILES["python"]
         with self.assertRaises(AttributeError):

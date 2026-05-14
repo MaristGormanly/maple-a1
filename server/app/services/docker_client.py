@@ -117,6 +117,17 @@ async def run_container(
         # cmake/...) can write its build artifacts in-place like normal.
         safe_dir = discovered_working_dir.lstrip("/") or "."
 
+        # C++ repos: the test_discoverer sanitizer blocks shell operators (&&)
+        # so the LLM can only emit a single binary path (e.g. ./test/etl_tests)
+        # rather than the cmake build+run chain the project actually needs.
+        # Use the profile's built-in test_command, which has the full compile →
+        # run lifecycle and is safe because it's already known-good.
+        effective_command = (
+            profile.test_command
+            if profile.language == "cpp"
+            else discovered_command
+        )
+
         prelude = _install_prelude(profile)
         prelude_clause = f" && {prelude}" if prelude else ""
         inner = (
@@ -129,7 +140,7 @@ async def run_container(
             f" ; cp -R /workspace/source/. /workspace/build/"
             f" && cd /workspace/build/{safe_dir}"
             f"{prelude_clause}"
-            f" && {discovered_command}"
+            f" && {effective_command}"
             f"; maple_status=$?"
             f"; exit $maple_status"
         )
@@ -173,10 +184,10 @@ async def run_container(
         # Security: no privilege escalation, drop every Linux capability
         security_opt=["no-new-privileges:true"],
         cap_drop=["ALL"],
-        # Filesystem: root FS is read-only; grant writable tmpfs only where
-        # test runners need it (/tmp for scratch, /root for package-manager
-        # caches that can't be suppressed)
-        read_only=True,
+        # Filesystem: root FS is read-only for all languages except C++.
+        # C++ needs a writable root so apt-get can update /var/lib/dpkg and
+        # /var/lib/apt/lists; otherwise apt-get exits 100 in under one second.
+        read_only=profile.read_only,
         tmpfs={
             "/tmp": "size=256m,mode=1777,exec",
             "/root": "size=768m",
