@@ -80,13 +80,21 @@
         @for (a of filtered(); track a.assignment_id) {
         <tr (click)="viewAssignment(a)" style="cursor:pointer">
           <td style="font-weight:600;color:var(--ink)">{{a.title}}</td>
-          <td class="mono"
-            style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-3);font-size:12px">
-            {{a.test_suite_repo_url ?? '—'}}
+          <td style="max-width:260px">
+            @if (a.test_discovery_mode === 'auto_discover') {
+            <span class="badge badge--neutral">Auto-discover</span>
+            } @else {
+            <span class="mono"
+              style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;color:var(--ink-3);font-size:12px">
+              {{a.test_suite_repo_url ?? '—'}}
+            </span>
+            }
           </td>
           <td>
             @if (a.language_override) {
             <span class="badge badge--neutral">{{a.language_override}}</span>
+            } @else if (a.detected_language) {
+            <span class="badge badge--neutral">{{a.detected_language}}</span>
             } @else {
             <span class="muted" style="font-size:13px">Auto-detect</span>
             }

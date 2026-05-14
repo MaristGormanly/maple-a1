@@ -47,15 +47,42 @@ export interface RecommendationObject {
   rationale?: string;
 }
 
+export interface CriterionReasoningDetails {
+  score_reasoning: string;
+  confidence_reasoning: string;
+  evidence: string;
+  uncertainty: string;
+  limitations: string;
+}
+
 export interface CriterionScore {
   criterion_name: string;
+  name?: string;
   score: number;
   level: ScoreLevel;
   rubric_standard?: string;
   rubric_weight?: string;
   justification: string;
   confidence: number;
+  reasoning_details?: CriterionReasoningDetails;
   recommendation?: RecommendationObject;
+  recommendations?: RecommendationObject[];
+}
+
+export interface StyleGuideSource {
+  source_title?: string;
+  style_guide_version?: string;
+  rule_id?: string;
+}
+
+export interface StyleFinding {
+  file_path: string;
+  line_range: { start: number; end: number };
+  rule_reference: string;
+  severity: string;
+  message: string;
+  style_guide_excerpt?: string;
+  style_guide_source?: StyleGuideSource;
 }
 
 export interface AiFeedback {
@@ -66,6 +93,7 @@ export interface AiFeedback {
     language?: string;
   };
   recommendations: RecommendationObject[];
+  style_findings?: StyleFinding[];
 }
 
 export interface CriterionOverride {
@@ -172,6 +200,8 @@ export interface AssignmentData {
   rubric_id: string | null;
   enable_lint_review: boolean;
   language_override: string | null;
+  test_discovery_mode: 'instructor_suite' | 'auto_discover';
+  detected_language: string | null;
   submission_count: number;
 }
 
@@ -205,6 +235,89 @@ export interface GitHubSettingsData {
 export interface GitHubSettingsResponse {
   success: boolean;
   data: GitHubSettingsData | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface AccountProfile {
+  user_id: string;
+  name: string | null;
+  email: string;
+  username: string | null;
+  school: string | null;
+  role: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AccountProfileResponse {
+  success: boolean;
+  data: AccountProfile | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface PasswordUpdateResponse {
+  success: boolean;
+  data: { updated: boolean } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface StyleGuideReference {
+  title: string;
+  document_url: string;
+  language: string;
+  version: string;
+  date_created: string | null;
+}
+
+export interface RepositoryItem {
+  full_name: string;
+  name: string;
+  owner: string;
+  html_url: string;
+  description: string | null;
+  visibility: 'public' | 'private';
+  updated_at: string;
+  default_branch: string;
+}
+
+export interface RepositoryListResponse {
+  success: boolean;
+  data: { repositories: RepositoryItem[]; page: number; count: number } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface StyleGuideReferencesResponse {
+  success: boolean;
+  data: { references: StyleGuideReference[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface RubricListItem {
+  rubric_id: string;
+  instructor_id: string | null;
+  title: string;
+  total_points: number;
+  notes: string | null;
+  filename: string | null;
+  has_file: boolean;
+  created_at: string | null;
+}
+
+export interface RubricListResponse {
+  success: boolean;
+  data: { rubrics: RubricListItem[] } | null;
+  error: ApiError | null;
+  metadata: ResponseMetadata;
+}
+
+export interface RubricDetailResponse {
+  success: boolean;
+  data: RubricListItem | null;
   error: ApiError | null;
   metadata: ResponseMetadata;
 }

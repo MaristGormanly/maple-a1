@@ -8,6 +8,8 @@ import { AssignmentPageComponent } from '../pages/assignment-page/assignment-pag
 import { AssignmentsPageComponent } from '../pages/assignments-page/assignments-page.component';
 import { AssignmentDetailPageComponent } from '../pages/assignment-detail-page/assignment-detail-page.component';
 import { SettingsPageComponent } from '../pages/settings-page/settings-page.component';
+import { RepositoriesPageComponent } from '../pages/repositories-page/repositories-page.component';
+import { RubricsPageComponent } from '../pages/rubrics-page/rubrics-page.component';
 import { authGuard } from '../guards/auth.guard';
 
 export const routes: Routes = [
@@ -24,6 +26,8 @@ export const routes: Routes = [
       { path: 'assignment', component: AssignmentPageComponent },
       { path: 'assignments', component: AssignmentsPageComponent },
       { path: 'assignments/:id', component: AssignmentDetailPageComponent },
+      { path: 'repositories', component: RepositoriesPageComponent },
+      { path: 'rubrics', component: RubricsPageComponent },
       { path: 'settings', component: SettingsPageComponent },
     ],
   },

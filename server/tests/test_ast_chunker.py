@@ -23,7 +23,7 @@ class ChunkerMetadataTests(unittest.TestCase):
     def test_supported_languages(self) -> None:
         self.assertEqual(
             set(supported_languages()),
-            {"python", "javascript", "typescript", "java"},
+            {"python", "javascript", "typescript", "java", "cpp"},
         )
 
     def test_regex_fallback_limitations_documented(self) -> None:
@@ -150,6 +150,26 @@ class JavaChunkerTests(unittest.TestCase):
     def test_detects_interface(self) -> None:
         names = [c.name for c in self.chunks]
         self.assertIn("Greeter", names)
+
+
+class CppChunkerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.chunks = extract_chunks(_FIXTURES / "sample.cpp", min_tokens=0)
+
+    def test_detects_classes_structs_and_functions(self) -> None:
+        names = [c.name for c in self.chunks]
+        self.assertIn("Packet", names)
+        self.assertIn("Parser", names)
+        self.assertIn("add", names)
+
+    def test_language_label_is_cpp(self) -> None:
+        for c in self.chunks:
+            self.assertEqual(c.language, "cpp")
+
+    def test_cpp_header_extension_detected(self) -> None:
+        chunks = extract_chunks("virtual.hpp", source="class HeaderOnly { int value() { return 1; } };\n", min_tokens=0)
+        self.assertEqual(chunks[0].language, "cpp")
+        self.assertEqual(chunks[0].name, "HeaderOnly")
 
 
 class MergeTests(unittest.TestCase):

@@ -23,6 +23,13 @@ describe('CriteriaScoresComponent', () => {
         rubric_weight: '20%',
         justification: 'The codebase is organized into cohesive modules.',
         confidence: 0.9,
+        reasoning_details: {
+          score_reasoning: 'The score follows the matched strong rubric level.',
+          confidence_reasoning: 'Confidence is high because evidence is consistent.',
+          evidence: 'Rubric standard and repository structure.',
+          uncertainty: 'No major uncertainty.',
+          limitations: 'Only submitted files were evaluated.',
+        },
       },
     ];
 
@@ -32,6 +39,25 @@ describe('CriteriaScoresComponent', () => {
     expect(text).toContain('Rubric standard');
     expect(text).toContain('20%');
     expect(text).toContain('Strong organization with clear logical divisions.');
+    expect(text).toContain('Evaluation rationale');
+    expect(text).toContain('The score follows the matched strong rubric level.');
+  });
+
+  it('omits the debug rationale when no reasoning details are present', () => {
+    fixture.componentInstance.criteriaScores = [
+      {
+        criterion_name: 'Correctness',
+        score: 100,
+        level: 'EXEMPLARY',
+        justification: 'All tests passed.',
+        confidence: 0.95,
+      },
+    ];
+
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('Evaluation rationale');
   });
 
   it('formats the new score level labels for display', () => {

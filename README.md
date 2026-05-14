@@ -65,6 +65,42 @@ ng serve
 # Frontend runs on http://localhost:4200
 ```
 
+## Docker Compose
+
+The bundled single-VM stack runs PostgreSQL 16 + pgvector, the FastAPI backend,
+and the Angular production build served by Nginx. It keeps sandbox execution on
+the host Docker daemon by mounting `/var/run/docker.sock`; sandbox containers run
+as siblings, not through Docker-in-Docker.
+
+```bash
+cp .env.docker.example .env.docker
+docker build -t maple-python-lint:3.12 -f server/docker/lint/Dockerfile.python .
+docker build -t maple-node-lint:20 -f server/docker/lint/Dockerfile.node .
+docker compose up -d --build db backend frontend
+```
+
+Open `http://localhost` for the bundled frontend. Nginx proxies `/api/` to the
+backend container, so the Docker-specific Angular build uses same-origin API
+calls. The backend remains available directly at `http://localhost:8000`; verify
+with:
+
+```bash
+curl http://localhost:8000/api/v1/code-eval/health
+docker compose exec backend python -c "import docker; print(docker.from_env().ping())"
+```
+
+The backend container applies `alembic upgrade head` before Uvicorn starts, so
+the instructor account and rubric ownership migrations are applied during normal
+Compose startup. To run migrations without starting the app, use:
+
+```bash
+docker compose --profile tools run --rm migrate
+```
+
+Run Compose from the repository root so `PWD` maps backend paths back to the
+host checkout for sibling sandbox containers. On a VM, clone the repo, create
+`.env.docker`, then start the services with `docker compose up -d --build`.
+
 ## Deployment
 
 **Production:** DigitalOcean Droplet (4 GB RAM / 2 vCPU, Ubuntu 24.04 LTS) at `161.35.125.120`. Nginx terminates TLS and reverse-proxies `/api/` to Uvicorn. The API is accessible at `https://api.maple-a1.com`. PostgreSQL is DigitalOcean Managed PostgreSQL 16 with `pgvector` enabled. Secrets live in `.env` on the Droplet — never committed. Full procedures in [docs/deployment.md](./docs/deployment.md).

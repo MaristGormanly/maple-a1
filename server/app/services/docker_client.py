@@ -12,6 +12,7 @@ Design-doc references:
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 
 from .docker_runner import ContainerConfig
@@ -33,6 +34,32 @@ class ContainerResult:
     container_runtime_version: int | None = None
 
 
+def _install_prelude(profile) -> str | None:
+    """Shell snippet that installs the test runner + project deps for *profile*.
+
+    Returns None when the language image already ships everything needed
+    (e.g. Maven, where ``mvn test`` resolves its own dependencies).
+    """
+    if not profile.install_command:
+        return None
+    if profile.language == "python":
+        return (
+            "pip install --no-cache-dir pytest"
+            " && ((test -f requirements.txt"
+            " && pip install --no-cache-dir -r requirements.txt)"
+            " || (test -f server/requirements.txt"
+            " && pip install --no-cache-dir -r server/requirements.txt)"
+            " || true)"
+        )
+    if profile.language in {"javascript", "typescript"}:
+        return (
+            "test -f package.json"
+            " && npm ci --ignore-scripts"
+            " || true"
+        )
+    return profile.install_command
+
+
 def _build_shell_command(profile) -> list[str]:
     """Build a composite shell command from the sandbox profile.
 
@@ -42,25 +69,9 @@ def _build_shell_command(profile) -> list[str]:
     """
     parts: list[str] = ["cd /workspace/tests"]
 
-    if profile.install_command:
-        if profile.language == "python":
-            # Always install the test runner, then try project deps at root or server/.
-            parts.append(
-                "pip install --no-cache-dir pytest"
-                " && ((test -f requirements.txt"
-                " && pip install --no-cache-dir -r requirements.txt)"
-                " || (test -f server/requirements.txt"
-                " && pip install --no-cache-dir -r server/requirements.txt)"
-                " || true)"
-            )
-        elif profile.language in {"javascript", "typescript"}:
-            parts.append(
-                "test -f package.json"
-                " && npm ci --ignore-scripts"
-                " || true"
-            )
-        else:
-            parts.append(profile.install_command)
+    prelude = _install_prelude(profile)
+    if prelude is not None:
+        parts.append(prelude)
 
     # Expose server/ to sys.path so local packages (e.g. `app`) are importable
     # without being pip-installed, covering repos with a server/ subdirectory layout.
@@ -71,12 +82,50 @@ def _build_shell_command(profile) -> list[str]:
     return ["sh", "-c", " && ".join(parts)]
 
 
+def _cpp_auto_discover_command(discovered_command: str) -> str:
+    """Build C++ projects, then prefer the discovered executable if available.
+
+    The test discoverer intentionally forbids shell operators, so it often
+    returns a bare executable path such as ``./test/etl_tests -v``.  CMake
+    projects need a configure/build phase first; after that, try to find the
+    named executable in ``build/`` and preserve any safe args.
+    """
+    try:
+        parts = shlex.split(discovered_command)
+    except ValueError:
+        parts = []
+
+    exe_name = ""
+    args: list[str] = []
+    if parts:
+        exe_name = parts[0].strip().rsplit("/", 1)[-1]
+        args = parts[1:]
+
+    quoted_exe = shlex.quote(exe_name)
+    quoted_args = " ".join(shlex.quote(arg) for arg in args)
+    run_discovered = ""
+    if exe_name:
+        run_discovered = (
+            f"; cpp_candidate=$(find build -type f -name {quoted_exe} -perm -111 | head -n 1)"
+            f"; if [ -n \"$cpp_candidate\" ]; then \"$cpp_candidate\" {quoted_args}; "
+            "cpp_status=$?; exit $cpp_status; fi"
+        )
+
+    return (
+        "mkdir -p build"
+        " && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DBUILD_TESTING=ON 2>&1"
+        " && cmake --build build --parallel 2 2>&1"
+        f"{run_discovered}"
+        " && cd build && ctest --output-on-failure --verbose 2>&1"
+    )
+
+
 async def run_container(
     language: str,
     student_repo_path: str,
     test_suite_path: str | None,
     *,
-    timeout_seconds: int = 30,
+    timeout_seconds: int | None = None,
     discovered_command: str | None = None,
     discovered_working_dir: str = ".",
     required_version: int | None = None,
@@ -91,8 +140,15 @@ async def run_container(
     *required_version* is passed to ``get_sandbox_profile`` so the best
     matching image is selected.  If no compatible image exists the highest
     available is used and ``ContainerResult.version_mismatch`` will be True.
+
+    *timeout_seconds* overrides the profile's default budget when set;
+    otherwise the per-language ``SandboxProfile.default_timeout_seconds``
+    applies (Java/C++ need ~10 min, Python/JS only ~2 min).
     """
     profile, version_ok = get_sandbox_profile(language, required_version)
+    effective_timeout = (
+        timeout_seconds if timeout_seconds is not None else profile.default_timeout_seconds
+    )
 
     if discovered_command is not None:
         # auto_discover: copy the read-only source into a writable tmpfs at
@@ -100,21 +156,29 @@ async def run_container(
         # cmake/...) can write its build artifacts in-place like normal.
         safe_dir = discovered_working_dir.lstrip("/") or "."
 
-        # After the discovered command, dump any JUnit-format XML test reports
-        # to stdout so the parser sees real per-test results.  Stdout-native
-        # frameworks (pytest, jest, gtest) ignore this; Maven Surefire and
-        # Gradle write XML to disk and need this extraction.
-        extract_xml = (
-            r' ; find . \( -path "*/target/surefire-reports/*.xml"'
-            r' -o -path "*/build/test-results/*/*.xml"'
-            r' -o -path "*/build/test-results/*.xml" \)'
-            r' -exec cat {} \; 2>/dev/null'
+        # C++ repos: build first, then run a discovered test executable if the
+        # build produced one.  Otherwise fall back to verbose ctest.
+        effective_command = (
+            _cpp_auto_discover_command(discovered_command)
+            if profile.language == "cpp"
+            else discovered_command
         )
+
+        prelude = _install_prelude(profile)
+        prelude_clause = f" && {prelude}" if prelude else ""
         inner = (
-            f"cp -a /workspace/source/. /workspace/build/"
+            # Merge stderr into stdout so Maven's build output (which lands on
+            # stderr in some Maven versions) is captured by log_normalizer.
+            "exec 2>&1"
+            # cp -R (not -a) avoids preserving host ownership; cap_drop=ALL
+            # strips CAP_CHOWN so `-a`'s ownership-preserve calls fail on Linux
+            # bind mounts whose source files belong to a non-root host user.
+            f" ; cp -R /workspace/source/. /workspace/build/"
             f" && cd /workspace/build/{safe_dir}"
-            f" && {discovered_command}"
-            f"{extract_xml}"
+            f"{prelude_clause}"
+            f" && {effective_command}"
+            f"; maple_status=$?"
+            f"; exit $maple_status"
         )
         command = ["sh", "-c", inner]
         volumes = {
@@ -146,21 +210,20 @@ async def run_container(
         volumes=volumes,
         environment=sandbox_environment,
         working_dir=container_working_dir,
-        timeout=timeout_seconds,
-        # Network: disabled in production; allowed in dev so pip can install deps.
-        network_disabled=(settings.APP_ENV == "production"),
-        # Memory: cap each container at 256 MB
-        mem_limit="256m",
-        # CPU: 50% of one core (quota/period = 0.5)
+        timeout=effective_timeout,
+        network_disabled=settings.DOCKER_SANDBOX_NETWORK_DISABLED,
+        # Resource budget comes from the per-language profile so compile-heavy
+        # languages (Java, C++) get more memory and CPU than interpreted ones.
+        mem_limit=profile.mem_limit,
         cpu_period=100_000,
-        cpu_quota=50_000,
+        cpu_quota=profile.cpu_quota,
         # Security: no privilege escalation, drop every Linux capability
         security_opt=["no-new-privileges:true"],
         cap_drop=["ALL"],
-        # Filesystem: root FS is read-only; grant writable tmpfs only where
-        # test runners need it (/tmp for scratch, /root for package-manager
-        # caches that can't be suppressed)
-        read_only=True,
+        # Filesystem: root FS is read-only for all languages except C++.
+        # C++ needs a writable root so apt-get can update /var/lib/dpkg and
+        # /var/lib/apt/lists; otherwise apt-get exits 100 in under one second.
+        read_only=profile.read_only,
         tmpfs={
             "/tmp": "size=256m,mode=1777,exec",
             "/root": "size=768m",

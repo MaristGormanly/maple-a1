@@ -36,6 +36,7 @@ import shutil
 import sys
 import tempfile
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +65,9 @@ from .test_parser import parse_test_results
 
 logger = logging.getLogger(__name__)
 
-_CONTAINER_TIMEOUT_SECONDS = 120
+# Container timeout is now governed by SandboxProfile.default_timeout_seconds
+# in sandbox_images.py so compile-heavy languages (Java, C++) get a wider
+# budget than interpreted ones.
 
 
 def _resolve_clone_repository():
@@ -103,6 +106,7 @@ _LANGUAGE_EXTENSIONS: dict[str, tuple[str, ...]] = {
     "javascript": (".js", ".jsx", ".mjs", ".cjs"),
     "typescript": (".ts", ".tsx"),
     "java": (".java",),
+    "cpp": (".cpp", ".hpp", ".h", ".cc", ".cxx"),
 }
 
 
@@ -205,6 +209,13 @@ async def run_pipeline(
         language = lang.get("language", "")
         required_version = parse_major_version(language, lang.get("version"))
 
+        if language:
+            async with async_session_maker() as _db_lang:
+                _asgn = await get_assignment_by_id(_db_lang, assignment_id)
+                if _asgn is not None:
+                    _asgn.detected_language = language
+                    await _db_lang.commit()
+
         _discovered_plan: DiscoveredTestPlan | None = None
 
         if test_discovery_mode == "auto_discover":
@@ -261,17 +272,11 @@ async def run_pipeline(
                 run_id=str(submission_id)[:8],
             )
 
-        _dlog(
-            location="pipeline.py:run_pipeline:container_start",
-            hypothesis_id="A,B",
-            message="about to run student container",
-            data={
-                "submission_id": str(submission_id),
-                "language": language,
-                "timeout_seconds": _CONTAINER_TIMEOUT_SECONDS,
-                "test_discovery_mode": test_discovery_mode,
-            },
-            run_id=str(submission_id)[:8],
+        logger.info(
+            "run_pipeline: starting sandbox container submission=%s language=%s mode=%s",
+            submission_id,
+            language,
+            test_discovery_mode,
         )
         _container_run_error: str | None = None
         try:
@@ -280,7 +285,6 @@ async def run_pipeline(
                     language,
                     student_repo_path,
                     None,
-                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
                     discovered_command=_discovered_plan.command,
                     discovered_working_dir=_discovered_plan.working_dir,
                     required_version=required_version,
@@ -290,7 +294,6 @@ async def run_pipeline(
                     language,
                     student_repo_path,
                     str(test_suite_dir.resolve()),
-                    timeout_seconds=_CONTAINER_TIMEOUT_SECONDS,
                     required_version=required_version,
                 )
         except Exception as _exc:
@@ -317,17 +320,13 @@ async def run_pipeline(
             from dataclasses import replace as _dc_replace
             container = _dc_replace(container, stderr=_mismatch_note + (container.stderr or ""))
 
-        _dlog(
-            location="pipeline.py:run_pipeline:container_done",
-            hypothesis_id="A,B",
-            message="container finished",
-            data={
-                "submission_id": str(submission_id),
-                "exit_code": container.exit_code,
-                "stdout_len": len(container.stdout or ""),
-                "stderr_len": len(container.stderr or ""),
-            },
-            run_id=str(submission_id)[:8],
+        logger.info(
+            "run_pipeline: container finished submission=%s exit_code=%s "
+            "stdout_bytes=%d stderr_bytes=%d",
+            submission_id,
+            container.exit_code,
+            len(container.stdout or ""),
+            len(container.stderr or ""),
         )
 
         parsed = parse_test_results(container.stdout, container.stderr, container.exit_code)
@@ -725,6 +724,7 @@ async def _run_evaluating_phase(
         )
         _normalize_criteria_scores(envelope)
         _attach_rubric_standards(envelope, rubric_content)
+        envelope["style_findings"] = (reasoning.get("pass2") or {}).get("findings") or []
         # region agent log
         _dlog(
             location="pipeline.py:_run_evaluating_phase:pass3_done",
@@ -936,7 +936,8 @@ def _collect_code_chunks_from_repo(
         if parts & {"node_modules", ".venv", "venv", "__pycache__", "dist", "build"}:
             continue
         try:
-            chunks.extend(extract_chunks(path))
+            rel = str(path.relative_to(root))
+            chunks.extend(replace(c, file_path=rel) for c in extract_chunks(path))
         except Exception:
             logger.exception("run_pipeline: chunker failed on %s", path)
         if len(chunks) >= _MAX_CHUNKS_PER_REPO:

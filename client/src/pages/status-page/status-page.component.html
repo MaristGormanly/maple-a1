@@ -363,6 +363,13 @@
       Recommendations
       <span class="tab__count">{{recommendations.length}}</span>
     </button>
+    <button class="tab" [class.tab--active]="activeTab === 'style'" (click)="activeTab = 'style'">
+      <svg width="14" height="14">
+        <use href="#icon-sparkles" />
+      </svg>
+      Style Review
+      <span class="tab__count">{{styleFindings.length}}</span>
+    </button>
   </div>
 
   @if (activeTab === 'scores') {
@@ -370,6 +377,9 @@
   }
   @if (activeTab === 'diff') {
   <app-diff-viewer [recommendations]="recommendations" />
+  }
+  @if (activeTab === 'style') {
+  <app-style-findings [findings]="styleFindings" />
   }
 
   }

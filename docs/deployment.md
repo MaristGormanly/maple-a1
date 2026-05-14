@@ -351,6 +351,7 @@ The app is configured with a **`.env`** file. Values must **never** be committed
 |----------------|-------------------|
 | `DATABASE_*` / `DATABASE_URL` | PostgreSQL (use a **local** database for development) |
 | `APP_ENV`, `APP_HOST`, `APP_PORT` | Application environment and server binding |
+| `DOCKER_SOCKET_URL`, `DOCKER_CONTAINER_TIMEOUT`, `DOCKER_SANDBOX_NETWORK_DISABLED` | Docker sandbox connection, TTL, and whether submitted-code containers can fetch dependencies |
 | `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT signing and token lifetime |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | Fernet key used to encrypt instructor GitHub PATs stored in the database. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Instructor PATs are entered in the app under **Settings → GitHub Connections**, not stored in `.env`. |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | LLM provider keys (placeholders until Milestone 3) |
@@ -683,6 +684,16 @@ The following Docker images provide pre-installed, pinned linter tooling for sta
 | JavaScript | `maple-node-lint:20` | eslint | `9.10.0` | `server/docker/lint/Dockerfile.node` |
 | TypeScript | `maple-node-lint:20` | eslint | `9.10.0` | `server/docker/lint/Dockerfile.node` |
 
+## Sandbox Images — Test Runners
+
+The C++ sandbox uses a prebuilt image so submitted-code containers do not need
+runtime `apt-get`. This keeps the execution container hardened with
+`cap_drop=ALL`, `no-new-privileges`, and a read-only root filesystem.
+
+| Language | Image tag | Tooling | Dockerfile |
+|----------|-----------|---------|------------|
+| C++ | `maple-cpp-sandbox:22.04` | `build-essential`, `cmake`, `ninja-build`, `libgtest-dev` | `server/docker/sandbox/Dockerfile.cpp` |
+
 ### Building the images locally
 
 Run from the repo root:
@@ -690,6 +701,7 @@ Run from the repo root:
 ```bash
 docker build -t maple-python-lint:3.12 -f server/docker/lint/Dockerfile.python .
 docker build -t maple-node-lint:20 -f server/docker/lint/Dockerfile.node .
+docker build -t maple-cpp-sandbox:22.04 -f server/docker/sandbox/Dockerfile.cpp .
 ```
 
 ### Smoke-test pinned versions
@@ -697,11 +709,12 @@ docker build -t maple-node-lint:20 -f server/docker/lint/Dockerfile.node .
 ```bash
 docker run --rm maple-python-lint:3.12 pylint --version
 docker run --rm maple-node-lint:20 eslint --version
+docker run --rm maple-cpp-sandbox:22.04 cmake --version
 ```
 
 ### Production deployment
 
-On the Droplet, build and tag these images before starting the service. The linter runner (`services/linter_runner.py`) references images by the tag names above; if the images are absent, `run_linter()` will raise a `DockerRunnerError` at runtime.
+On the Droplet, build and tag these images before starting the service. The linter runner (`services/linter_runner.py`) and C++ sandbox profile (`services/sandbox_images.py`) reference images by the tag names above; if the images are absent, the corresponding container run will raise a `DockerRunnerError` at runtime.
 
 ---
 

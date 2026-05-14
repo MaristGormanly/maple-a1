@@ -12,10 +12,10 @@ class Submission(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     assignment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("assignments.id"), nullable=False
+        ForeignKey("assignments.id", ondelete="CASCADE"), nullable=False
     )
     student_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     github_repo_url: Mapped[str] = mapped_column(String, nullable=False)
     commit_hash: Mapped[str | None] = mapped_column(String, nullable=True)

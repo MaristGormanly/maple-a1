@@ -1,0 +1,57 @@
+@if (findings.length === 0) {
+  <p class="empty-state">No style issues were flagged.</p>
+} @else {
+  <div>
+    <div class="section-title">
+      Style findings
+      <span class="section-title__count">{{findings.length}} issue{{findings.length === 1 ? '' : 's'}}</span>
+    </div>
+
+    @for (f of findings; track f.file_path + f.line_range.start) {
+      <div class="criterion">
+        <div class="criterion__head">
+          <div class="criterion__name">
+            {{f.file_path}}
+            <span class="style-finding__loc">{{lineRangeLabel(f)}}</span>
+          </div>
+          <span
+            class="badge"
+            [class.badge--red]="severityTone(f.severity) === 'red'"
+            [class.badge--amber]="severityTone(f.severity) === 'amber'"
+            [class.badge--neutral]="severityTone(f.severity) === 'blue'"
+          >
+            <span class="badge__dot"></span>{{f.severity}}
+          </span>
+        </div>
+
+        <p class="criterion__just">
+          <span class="style-finding__rule">{{f.rule_reference}}</span> — {{f.message}}
+        </p>
+
+        @if (f.style_guide_source?.source_title) {
+          <div class="criterion__standard">
+            <div class="criterion__standard-label">
+              Source
+              @if (f.style_guide_source!.rule_id) {
+                <span>§ {{f.style_guide_source!.rule_id}}</span>
+              }
+            </div>
+            <p>
+              {{f.style_guide_source!.source_title}}
+              @if (f.style_guide_source!.style_guide_version) {
+                <span class="style-finding__version">({{f.style_guide_source!.style_guide_version}})</span>
+              }
+            </p>
+          </div>
+        }
+
+        @if (f.style_guide_excerpt) {
+          <details class="criterion__debug">
+            <summary>Style guide excerpt</summary>
+            <p class="style-finding__excerpt">{{f.style_guide_excerpt}}</p>
+          </details>
+        }
+      </div>
+    }
+  </div>
+}

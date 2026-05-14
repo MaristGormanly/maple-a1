@@ -39,7 +39,7 @@ from .middleware.auth import get_current_user
 from .middleware.rate_limit import install_rate_limiting, limiter
 from .models.database import get_db
 from .preprocessing import RepositoryPreprocessingError, preprocess_repository
-from .routers import assignments, auth, rubrics, settings as settings_router, submissions
+from .routers import assignments, auth, repositories, rubrics, settings as settings_router, submissions
 from .services.assignments import parse_assignment_id, validate_assignment_exists
 from .services.git_ingest import CloneError, clone_repository
 from .services.github_settings import GitHubSettingsError, get_required_github_pat_for_instructor
@@ -56,6 +56,7 @@ _url_adapter = TypeAdapter(HttpUrl)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_REPOS_ROOT = PROJECT_ROOT / "data" / "raw"
 CACHE_INDEX_PATH = PROJECT_ROOT / "data" / "cache" / "repository-cache-index.json"
+_RUBRICS_UPLOADS_DIR = PROJECT_ROOT / "uploads" / "rubrics"
 
 
 class MapleAPIError(Exception):
@@ -399,6 +400,7 @@ app.include_router(auth.router, prefix="/api/v1/code-eval")
 app.include_router(assignments.router, prefix="/api/v1/code-eval")
 app.include_router(rubrics.router, prefix="/api/v1/code-eval")
 app.include_router(settings_router.router, prefix="/api/v1/code-eval")
+app.include_router(repositories.router, prefix="/api/v1/code-eval")
 app.include_router(submissions.router, prefix="/api/v1/code-eval")
 
 @app.exception_handler(RequestValidationError)
@@ -438,7 +440,8 @@ async def evaluate_submission(
     github_url: str = Form(...),
     assignment_id: str | None = Form(default=None),
     student_name: str | None = Form(default=None),
-    rubric: UploadFile = File(...),
+    rubric: UploadFile | None = File(default=None),
+    rubric_id: str | None = Form(default=None),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SubmissionResponse:
@@ -472,28 +475,12 @@ async def evaluate_submission(
             message=str(exc),
         ) from exc
 
-    rubric_bytes = await rubric.read()
-    try:
-        rubric_text = rubric_bytes.decode("utf-8")
-    except UnicodeDecodeError as exc:
+    if str(current_user.get("role", "")).strip().lower() not in {"instructor", "admin"}:
         raise MapleAPIError(
-            status_code=400,
-            code="VALIDATION_ERROR",
-            message="Rubric file must be UTF-8 encoded text or JSON.",
-        ) from exc
-    try:
-        rubric_content: dict[str, Any] | list[Any] | str = json.loads(rubric_text)
-    except json.JSONDecodeError:
-        rubric_content = rubric_text
-
-    try:
-        rubric_fingerprint = fingerprint_rubric_content(rubric_content)
-    except RepositoryCacheError as exc:
-        raise MapleAPIError(
-            status_code=400,
-            code="VALIDATION_ERROR",
-            message=str(exc),
-        ) from exc
+            status_code=403,
+            code="FORBIDDEN",
+            message="Operation requires Instructor role.",
+        )
 
     try:
         student_id = UUID(current_user["sub"])
@@ -503,6 +490,78 @@ async def evaluate_submission(
             code="AUTH_ERROR",
             message="Invalid user identity in token.",
         )
+
+    if rubric_id and rubric is None:
+        try:
+            _rid = UUID(rubric_id)
+        except ValueError:
+            raise MapleAPIError(
+                status_code=400,
+                code="VALIDATION_ERROR",
+                message="rubric_id must be a valid UUID",
+            )
+        from .models.rubric import Rubric as _RubricModel
+        db_rubric = await db.get(_RubricModel, _rid)
+        if not db_rubric or not db_rubric.filename:
+            raise MapleAPIError(
+                status_code=404,
+                code="NOT_FOUND",
+                message=f"Rubric '{rubric_id}' not found or has no stored file",
+            )
+        if (
+            str(current_user.get("role", "")).strip().lower() != "admin"
+            and db_rubric.instructor_id != student_id
+        ):
+            raise MapleAPIError(
+                status_code=403,
+                code="FORBIDDEN",
+                message="You do not own this rubric.",
+            )
+        stored_files = list(_RUBRICS_UPLOADS_DIR.glob(f"{rubric_id}_*"))
+        if not stored_files:
+            raise MapleAPIError(
+                status_code=404,
+                code="NOT_FOUND",
+                message="Rubric file not found on disk",
+            )
+        rubric_bytes = stored_files[0].read_bytes()
+        try:
+            rubric_text = rubric_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            rubric_text = ""
+        try:
+            rubric_content: dict[str, Any] | list[Any] | str = json.loads(rubric_text)
+        except json.JSONDecodeError:
+            rubric_content = rubric_text
+    elif rubric is not None:
+        rubric_bytes = await rubric.read()
+        try:
+            rubric_text = rubric_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise MapleAPIError(
+                status_code=400,
+                code="VALIDATION_ERROR",
+                message="Rubric file must be UTF-8 encoded text or JSON.",
+            ) from exc
+        try:
+            rubric_content = json.loads(rubric_text)
+        except json.JSONDecodeError:
+            rubric_content = rubric_text
+    else:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message="Either a rubric file or a rubric_id must be provided",
+        )
+
+    try:
+        rubric_fingerprint = fingerprint_rubric_content(rubric_content)
+    except RepositoryCacheError as exc:
+        raise MapleAPIError(
+            status_code=400,
+            code="VALIDATION_ERROR",
+            message=str(exc),
+        ) from exc
 
     parsed_assignment_id: UUID | None = None
     if assignment_id:
@@ -515,12 +574,21 @@ async def evaluate_submission(
                 message="assignment_id must be a valid UUID.",
             )
         try:
-            await validate_assignment_exists(db, parsed_assignment_id)
+            assignment = await validate_assignment_exists(db, parsed_assignment_id)
         except ValueError:
             raise MapleAPIError(
                 status_code=404,
                 code="NOT_FOUND",
                 message=f"Assignment '{assignment_id}' does not exist.",
+            )
+        if (
+            str(current_user.get("role", "")).strip().lower() != "admin"
+            and assignment.instructor_id != student_id
+        ):
+            raise MapleAPIError(
+                status_code=403,
+                code="FORBIDDEN",
+                message="You do not own this assignment.",
             )
 
     try:

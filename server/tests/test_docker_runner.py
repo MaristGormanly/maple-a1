@@ -7,6 +7,8 @@ from app.services.docker_runner import (
     ContainerConfig,
     ContainerResult,
     DockerRunnerError,
+    PROJECT_ROOT,
+    _host_volume_source,
     _run_container_sync,
 )
 
@@ -174,6 +176,25 @@ class TestRunContainerSync(unittest.TestCase):
         _run_container_sync(config)
 
         container.wait.assert_called_once_with(timeout=10)
+
+
+class TestHostVolumeSourceMapping(unittest.TestCase):
+    @patch(_SETTINGS_PATCH)
+    def test_maps_project_path_when_host_root_is_configured(self, mock_settings):
+        mock_settings.DOCKER_HOST_PROJECT_ROOT = "/srv/maple-a1"
+        source = str(PROJECT_ROOT / "data" / "raw" / "example")
+
+        self.assertEqual(
+            _host_volume_source(source),
+            "/srv/maple-a1/data/raw/example",
+        )
+
+    @patch(_SETTINGS_PATCH)
+    def test_leaves_paths_unchanged_without_host_root(self, mock_settings):
+        mock_settings.DOCKER_HOST_PROJECT_ROOT = ""
+        source = str(PROJECT_ROOT / "data" / "raw" / "example")
+
+        self.assertEqual(_host_volume_source(source), source)
 
 
 class TestRunContainerAsync(unittest.IsolatedAsyncioTestCase):

@@ -52,7 +52,7 @@ def _db_with_no_user() -> AsyncMock:
 
 class RegisterTests(unittest.IsolatedAsyncioTestCase):
     @patch.object(auth_router, "hash_password", side_effect=_fake_hash)
-    async def test_register_returns_user_with_student_role(self, _hash) -> None:
+    async def test_register_returns_user_with_instructor_role(self, _hash) -> None:
         captured = {}
 
         async def fake_refresh(user):
@@ -67,23 +67,33 @@ class RegisterTests(unittest.IsolatedAsyncioTestCase):
         db.refresh = AsyncMock(side_effect=fake_refresh)
 
         response = await register(
-            RegisterRequest(email="newstudent@marist.edu", password="hunter2"),
+            RegisterRequest(
+                name="Elena Marsh",
+                email="NewInstructor@Marist.edu",
+                username="emarsh",
+                school="Marist",
+                password="hunter22",
+            ),
             db=db,
         )
 
         payload = _payload(response)
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["data"]["email"], "newstudent@marist.edu")
-        self.assertEqual(payload["data"]["role"], "Student")
+        self.assertEqual(payload["data"]["email"], "newinstructor@marist.edu")
+        self.assertEqual(payload["data"]["name"], "Elena Marsh")
+        self.assertEqual(payload["data"]["username"], "emarsh")
+        self.assertEqual(payload["data"]["school"], "Marist")
+        self.assertEqual(payload["data"]["role"], "Instructor")
         self.assertIn("user_id", payload["data"])
+        self.assertIn("access_token", payload["data"])
 
         # Confirm the row that was added carries a populated password_hash —
         # this is the invariant the prior audit found was crashing at runtime
         # because the column did not exist.
         added_user = captured["user"]
-        self.assertEqual(added_user.password_hash, "hashed::hunter2")
-        self.assertNotEqual(added_user.password_hash, "hunter2")
-        self.assertEqual(added_user.role, "Student")
+        self.assertEqual(added_user.password_hash, "hashed::hunter22")
+        self.assertNotEqual(added_user.password_hash, "hunter22")
+        self.assertEqual(added_user.role, "Instructor")
 
     @patch.object(auth_router, "hash_password", side_effect=_fake_hash)
     async def test_register_duplicate_email_returns_409(self, _hash) -> None:
@@ -95,7 +105,7 @@ class RegisterTests(unittest.IsolatedAsyncioTestCase):
         db.rollback = AsyncMock()
 
         response = await register(
-            RegisterRequest(email="taken@marist.edu", password="hunter2"),
+            RegisterRequest(name="Taken", email="taken@marist.edu", password="hunter22"),
             db=db,
         )
 

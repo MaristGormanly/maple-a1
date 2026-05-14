@@ -34,6 +34,33 @@
           </div>
         }
         <p class="criterion__just">{{c.justification}}</p>
+        @if (c.reasoning_details) {
+          <details class="criterion__debug">
+            <summary>Evaluation rationale</summary>
+            <div class="criterion__debug-grid">
+              <section>
+                <h4>Score</h4>
+                <p>{{c.reasoning_details.score_reasoning}}</p>
+              </section>
+              <section>
+                <h4>Confidence</h4>
+                <p>{{c.reasoning_details.confidence_reasoning}}</p>
+              </section>
+              <section>
+                <h4>Evidence</h4>
+                <p>{{c.reasoning_details.evidence}}</p>
+              </section>
+              <section>
+                <h4>Uncertainty</h4>
+                <p>{{c.reasoning_details.uncertainty}}</p>
+              </section>
+              <section>
+                <h4>Limitations</h4>
+                <p>{{c.reasoning_details.limitations}}</p>
+              </section>
+            </div>
+          </details>
+        }
         <div class="conf-row">
           <span class="conf-row__label">Confidence</span>
           <div class="conf-track">

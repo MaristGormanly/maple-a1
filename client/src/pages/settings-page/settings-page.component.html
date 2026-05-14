@@ -31,11 +31,13 @@
 
   @if (successMessage()) {
   <div style="margin-bottom:20px">
-    <div class="banner banner--info" role="status">
+      <div class="banner banner--info" role="status">
       <span class="banner__icon"><svg width="16" height="16"><use href="#icon-check" /></svg></span>
       <div class="banner__copy">
         <div class="banner__title">{{successMessage()}}</div>
-        <div class="banner__body">The token itself is encrypted server-side and is never displayed here.</div>
+        @if (successBody()) {
+        <div class="banner__body">{{successBody()}}</div>
+        }
       </div>
       <button class="banner__close" (click)="successMessage.set(null)" aria-label="Dismiss">
         <svg width="14" height="14"><use href="#icon-x" /></svg>
@@ -56,9 +58,32 @@
       <svg width="16" height="16"><use href="#icon-github" /></svg>
       GitHub Connections
     </button>
+    <button
+      type="button"
+      class="folder-tab"
+      [class.folder-tab--active]="activeTab() === 'style-guides'"
+      (click)="selectTab('style-guides')"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'style-guides'"
+    >
+      <svg width="16" height="16"><use href="#icon-book" /></svg>
+      Style Guide References
+    </button>
+    <button
+      type="button"
+      class="folder-tab"
+      [class.folder-tab--active]="activeTab() === 'account'"
+      (click)="selectTab('account')"
+      role="tab"
+      [attr.aria-selected]="activeTab() === 'account'"
+    >
+      <svg width="16" height="16"><use href="#icon-user" /></svg>
+      Account Information
+    </button>
   </div>
 
   <section class="folder-panel" role="tabpanel">
+    @if (activeTab() === 'github') {
     @if (loading()) {
     <div class="empty">
       <span class="spinner"></span>
@@ -201,6 +226,224 @@
         </div>
       </aside>
     </div>
+    }
+    } @else if (activeTab() === 'style-guides') {
+    <div>
+      <div class="section-title">
+        <svg width="20" height="20"><use href="#icon-book" /></svg>
+        Style Guide References
+        <span class="section-title__count">
+          {{styleGuideReferences().length}}
+          {{styleGuideReferences().length === 1 ? 'reference' : 'references'}}
+        </span>
+      </div>
+
+      @if (referencesLoading()) {
+      <div class="empty">
+        <span class="spinner"></span>
+        <p>Loading style guide references.</p>
+      </div>
+      } @else if (styleGuideReferences().length === 0) {
+      <div class="empty">
+        <div class="empty__icon">
+          <svg width="24" height="24"><use href="#icon-book" /></svg>
+        </div>
+        <h3>No references indexed</h3>
+        <p>Run the style guide ingester before using RAG-backed style review.</p>
+      </div>
+      } @else {
+      <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th style="width:140px">Language</th>
+              <th style="width:150px">Version</th>
+              <th style="width:210px">Date created</th>
+              <th style="width:120px">Document</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (reference of styleGuideReferences(); track reference.document_url + reference.version) {
+            <tr>
+              <td style="font-weight:600;color:var(--ink)">{{reference.title}}</td>
+              <td class="mono">{{reference.language}}</td>
+              <td class="mono">{{reference.version}}</td>
+              <td class="mono">
+                @if (reference.date_created) {
+                {{reference.date_created | date:'medium'}}
+                } @else {
+                Unknown
+                }
+              </td>
+              <td>
+                <a
+                  class="linkbtn"
+                  [href]="reference.document_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open
+                  <svg width="12" height="12"><use href="#icon-chevron" /></svg>
+                </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      }
+    </div>
+    } @else {
+    @if (accountLoading()) {
+    <div class="empty">
+      <span class="spinner"></span>
+      <p>Loading account information.</p>
+    </div>
+    } @else {
+    <div class="settings-grid">
+      <div>
+        <div class="section-title">
+          <svg width="20" height="20"><use href="#icon-user" /></svg>
+          Account Information
+        </div>
+
+        <form
+          [formGroup]="accountForm"
+          (ngSubmit)="saveAccountProfile()"
+          class="settings-form"
+          autocomplete="off"
+        >
+          <div class="field">
+            <label class="field__label" for="accountName">Name <span class="field__req">*</span></label>
+            <input id="accountName" class="input" formControlName="name" autocomplete="name" />
+            @if (accountForm.controls.name.touched && accountForm.controls.name.invalid) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Enter your name.
+            </span>
+            }
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="accountEmail">Email <span class="field__req">*</span></label>
+            <input id="accountEmail" class="input" type="email" formControlName="email" autocomplete="email" />
+            @if (accountForm.controls.email.touched && accountForm.controls.email.invalid) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Enter a valid email address.
+            </span>
+            }
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="accountUsername">Username</label>
+            <input id="accountUsername" class="input" formControlName="username" autocomplete="username" />
+            @if (accountForm.controls.username.touched && accountForm.controls.username.invalid) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Keep the username between 3 and 80 characters.
+            </span>
+            }
+          </div>
+
+          <div class="field">
+            <label class="field__label" for="accountSchool">Organization or school</label>
+            <input id="accountSchool" class="input" formControlName="school" autocomplete="organization" />
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn btn--primary" type="submit" [disabled]="savingAccount()">
+              @if (savingAccount()) {
+              <span class="spinner"></span>
+              Saving
+              } @else {
+              Save account
+              }
+            </button>
+          </div>
+        </form>
+
+        <div class="section-title" style="margin-top:32px">
+          <svg width="20" height="20"><use href="#icon-shield" /></svg>
+          Password
+        </div>
+
+        <form
+          [formGroup]="passwordForm"
+          (ngSubmit)="updatePassword()"
+          class="settings-form"
+          autocomplete="off"
+        >
+          <div class="field">
+            <label class="field__label" for="currentPassword">Current password</label>
+            <input id="currentPassword" class="input" type="password" formControlName="currentPassword" autocomplete="current-password" />
+          </div>
+          <div class="field">
+            <label class="field__label" for="newPassword">New password</label>
+            <input id="newPassword" class="input" type="password" formControlName="newPassword" autocomplete="new-password" />
+            @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
+            <span class="field__error">
+              <svg width="13" height="13"><use href="#icon-warn" /></svg>
+              Use at least 8 characters.
+            </span>
+            }
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn--ghost" type="submit" [disabled]="savingPassword()">
+              @if (savingPassword()) {
+              <span class="spinner"></span>
+              Updating
+              } @else {
+              Update password
+              }
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <aside class="settings-note" style="flex-direction:column">
+        <div style="display:flex;gap:14px">
+          <div class="settings-note__icon">
+            <svg width="20" height="20"><use href="#icon-warn" /></svg>
+          </div>
+          <div>
+            <div class="settings-note__title">Delete account</div>
+            <p>
+              This permanently deletes your instructor account and all assignments, submissions,
+              rubrics, rubric files, and saved GitHub settings owned by it.
+            </p>
+          </div>
+        </div>
+
+        <form [formGroup]="deleteAccountForm" (ngSubmit)="deleteAccount()" class="settings-form" style="gap:12px">
+          <div class="field">
+            <label class="field__label" for="deleteAccountConfirmation">
+              Type "{{deleteConfirmation}}" to continue
+            </label>
+            <input
+              id="deleteAccountConfirmation"
+              class="input"
+              formControlName="confirmation"
+              autocomplete="off"
+            />
+          </div>
+          <button
+            class="btn btn--danger"
+            type="submit"
+            [disabled]="!deleteAccountReady || deletingAccount()"
+          >
+            @if (deletingAccount()) {
+            <span class="spinner"></span>
+            Deleting
+            } @else {
+            Delete account
+            }
+          </button>
+        </form>
+      </aside>
+    </div>
+    }
     }
   </section>
 </div>

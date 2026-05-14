@@ -32,12 +32,13 @@
 
   <div class="auth__main">
     <div class="auth__card">
+      @if (!createMode) {
       <h1>Sign in.</h1>
       <div class="auth__sub">Use your Marist instructor credentials to continue.</div>
 
       @if (errorMessage) {
         <div class="banner banner--error" role="alert" style="margin-bottom:14px">
-          <span class="banner__icon"><svg width="16" height="16"><use href="#icon-alert"/></svg></span>
+          <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn"/></svg></span>
           <div class="banner__copy">
             <div class="banner__title">Sign-in failed</div>
             <div class="banner__body">{{ errorMessage }}</div>
@@ -84,8 +85,77 @@
       </form>
 
       <div class="auth__foot" style="margin-top:20px">
-        Student accounts are not provisioned during the pilot.
+        Need instructor access?
+        <a href="#" (click)="$event.preventDefault(); setMode(true)">Create an account</a>
       </div>
+      } @else {
+      <h1>Create account.</h1>
+      <div class="auth__sub">Create your instructor account to start using MAPLE A1.</div>
+
+      @if (errorMessage) {
+        <div class="banner banner--error" role="alert" style="margin-bottom:14px">
+          <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn"/></svg></span>
+          <div class="banner__copy">
+            <div class="banner__title">Account creation failed</div>
+            <div class="banner__body">{{ errorMessage }}</div>
+          </div>
+        </div>
+      }
+
+      <form class="auth__form" [formGroup]="createForm" (submit)="onCreateAccount($event)">
+        <div class="field">
+          <label class="field__label" for="createName">Name</label>
+          <input id="createName" class="input" type="text" placeholder="Instructor name" formControlName="name" autocomplete="name" />
+          @if (showCreateNameErr) {
+            <span class="field__hint" style="color:var(--danger)">Name is required.</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="createEmail">Email</label>
+          <input id="createEmail" class="input" type="email" placeholder="you@school.edu" formControlName="email" autocomplete="email" />
+          @if (showCreateEmailErr) {
+            <span class="field__hint" style="color:var(--danger)">Enter a valid email address.</span>
+          }
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="createUsername">Username <span class="field__opt">(optional)</span></label>
+          <input id="createUsername" class="input" type="text" placeholder="instructor-name" formControlName="username" autocomplete="username" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="createSchool">Organization or school <span class="field__opt">(optional)</span></label>
+          <input id="createSchool" class="input" type="text" placeholder="Marist" formControlName="school" autocomplete="organization" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="createPw">Password</label>
+          <div style="position:relative">
+            <input id="createPw" class="input" [type]="showCreatePassword ? 'text' : 'password'" formControlName="password" autocomplete="new-password" style="padding-right:40px" />
+            <button type="button" class="iconbtn" style="position:absolute;right:5px;top:5px" (click)="showCreatePassword = !showCreatePassword" aria-label="Toggle password">
+              @if (showCreatePassword) {
+                <svg width="15" height="15"><use href="#icon-eye-off"/></svg>
+              } @else {
+                <svg width="15" height="15"><use href="#icon-eye"/></svg>
+              }
+            </button>
+          </div>
+          @if (showCreatePwErr) {
+            <span class="field__hint" style="color:var(--danger)">Use at least 8 characters.</span>
+          }
+        </div>
+
+        <button type="submit" class="btn btn--primary btn--lg" [disabled]="submitting">
+          @if (submitting) { Creating… } @else { Create account }
+        </button>
+      </form>
+
+      <div class="auth__foot" style="margin-top:20px">
+        Already have an account?
+        <a href="#" (click)="$event.preventDefault(); setMode(false)">Sign in</a>
+      </div>
+      }
     </div>
   </div>
 </div>

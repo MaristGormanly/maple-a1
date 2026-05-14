@@ -1,4 +1,5 @@
 import uuid
+from copy import deepcopy
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -68,6 +69,18 @@ def _flatten_criteria_recommendations(criteria_scores: list) -> list:
     return flat
 
 
+def _criteria_for_viewer(criteria_scores: list, *, include_debug: bool) -> list:
+    """Return criteria scores with instructor-only debug details filtered."""
+    if include_debug:
+        return criteria_scores
+
+    sanitized = deepcopy(criteria_scores)
+    for criterion in sanitized:
+        if isinstance(criterion, dict):
+            criterion.pop("reasoning_details", None)
+    return sanitized
+
+
 def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
     """Build the canonical SubmissionStatusData envelope for a submission.
 
@@ -119,7 +132,11 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
         feedback_json = er.ai_feedback_json
         if feedback_json and isinstance(feedback_json, dict):
             if viewer_is_privileged or review_status == "approved":
-                criteria_scores = feedback_json.get("criteria_scores") or []
+                raw_criteria_scores = feedback_json.get("criteria_scores") or []
+                criteria_scores = _criteria_for_viewer(
+                    raw_criteria_scores,
+                    include_debug=viewer_is_privileged,
+                )
                 recommendations = _flatten_criteria_recommendations(
                     criteria_scores
                 )
@@ -132,6 +149,7 @@ def _serialize_submission(submission: Submission, viewer_role: str) -> dict:
                         "language": ai_meta.get("language"),
                     },
                     "recommendations": recommendations,
+                    "style_findings": feedback_json.get("style_findings") or [],
                 }
 
         data["evaluation"] = eval_data

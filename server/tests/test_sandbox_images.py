@@ -22,6 +22,8 @@ class TestSandboxProfiles(unittest.TestCase):
         self.assertEqual(p.language, "java")
         self.assertIn("maven", p.image)
         self.assertIn("mvn test", p.test_command)
+        self.assertIn("maple_status=$?", p.test_command)
+        self.assertTrue(p.test_command.endswith("exit $maple_status"))
         self.assertIsNone(p.install_command)
 
     def test_javascript_profile(self) -> None:
@@ -42,6 +44,29 @@ class TestSandboxProfiles(unittest.TestCase):
             SANDBOX_PROFILES["typescript"].image,
         )
 
+    def test_compile_heavy_languages_get_wider_budget(self) -> None:
+        # Java and C++ compile + download deps before tests run, so they get a
+        # bigger time/memory/CPU budget than interpreted languages.
+        for lang in ("java", "cpp"):
+            with self.subTest(lang=lang):
+                p = SANDBOX_PROFILES[lang]
+                self.assertGreaterEqual(p.default_timeout_seconds, 600)
+                self.assertEqual(p.mem_limit, "2g")
+                self.assertGreaterEqual(p.cpu_quota, 100_000)
+
+    def test_cpp_profile_gets_extra_large_compile_budget(self) -> None:
+        p = SANDBOX_PROFILES["cpp"]
+        self.assertEqual(p.default_timeout_seconds, 1800)
+        self.assertEqual(p.cpu_quota, 200_000)
+
+    def test_interpreted_languages_keep_default_budget(self) -> None:
+        for lang in ("python", "javascript", "typescript"):
+            with self.subTest(lang=lang):
+                p = SANDBOX_PROFILES[lang]
+                self.assertEqual(p.default_timeout_seconds, 120)
+                self.assertEqual(p.mem_limit, "256m")
+                self.assertEqual(p.cpu_quota, 50_000)
+
     def test_all_profiles_have_image_and_test_command(self) -> None:
         for lang, profile in SANDBOX_PROFILES.items():
             with self.subTest(lang=lang):
@@ -53,6 +78,19 @@ class TestSandboxProfiles(unittest.TestCase):
             with self.subTest(lang=lang):
                 self.assertTrue(profile.working_dir)
 
+    def test_cpp_profile_uses_prebuilt_image(self) -> None:
+        p = SANDBOX_PROFILES["cpp"]
+        self.assertEqual(p.image, "maple-cpp-sandbox:22.04")
+        self.assertIsNone(p.install_command)
+        self.assertIn("-DBUILD_TESTS=ON", p.test_command)
+        self.assertIn("-DBUILD_TESTING=ON", p.test_command)
+        self.assertTrue(p.read_only)
+
+    def test_non_cpp_profiles_are_read_only(self) -> None:
+        for lang in ("python", "javascript", "typescript", "java"):
+            with self.subTest(lang=lang):
+                self.assertTrue(SANDBOX_PROFILES[lang].read_only)
+
     def test_profiles_are_frozen(self) -> None:
         p = SANDBOX_PROFILES["python"]
         with self.assertRaises(AttributeError):
@@ -61,30 +99,47 @@ class TestSandboxProfiles(unittest.TestCase):
 
 class TestGetSandboxProfile(unittest.TestCase):
     def test_returns_python(self) -> None:
-        self.assertEqual(get_sandbox_profile("python").language, "python")
+        profile, version_ok = get_sandbox_profile("python")
+        self.assertEqual(profile.language, "python")
+        self.assertTrue(version_ok)
 
     def test_returns_java(self) -> None:
-        self.assertEqual(get_sandbox_profile("java").language, "java")
+        profile, version_ok = get_sandbox_profile("java")
+        self.assertEqual(profile.language, "java")
+        self.assertTrue(version_ok)
 
     def test_returns_javascript(self) -> None:
-        self.assertEqual(get_sandbox_profile("javascript").language, "javascript")
+        profile, version_ok = get_sandbox_profile("javascript")
+        self.assertEqual(profile.language, "javascript")
+        self.assertTrue(version_ok)
 
     def test_returns_typescript(self) -> None:
-        self.assertEqual(get_sandbox_profile("typescript").language, "typescript")
+        profile, version_ok = get_sandbox_profile("typescript")
+        self.assertEqual(profile.language, "typescript")
+        self.assertTrue(version_ok)
 
     def test_unknown_falls_back_to_default(self) -> None:
-        self.assertEqual(get_sandbox_profile("rust"), DEFAULT_PROFILE)
+        profile, version_ok = get_sandbox_profile("rust")
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_empty_string_falls_back(self) -> None:
-        self.assertEqual(get_sandbox_profile(""), DEFAULT_PROFILE)
+        profile, version_ok = get_sandbox_profile("")
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_none_falls_back(self) -> None:
-        self.assertEqual(get_sandbox_profile(None), DEFAULT_PROFILE)  # type: ignore[arg-type]
+        profile, version_ok = get_sandbox_profile(None)  # type: ignore[arg-type]
+        self.assertEqual(profile, DEFAULT_PROFILE)
+        self.assertTrue(version_ok)
 
     def test_case_insensitive(self) -> None:
-        self.assertEqual(get_sandbox_profile("Python").language, "python")
-        self.assertEqual(get_sandbox_profile("JAVA").language, "java")
-        self.assertEqual(get_sandbox_profile("JavaScript").language, "javascript")
+        python_profile, _ = get_sandbox_profile("Python")
+        java_profile, _ = get_sandbox_profile("JAVA")
+        js_profile, _ = get_sandbox_profile("JavaScript")
+        self.assertEqual(python_profile.language, "python")
+        self.assertEqual(java_profile.language, "java")
+        self.assertEqual(js_profile.language, "javascript")
 
     def test_default_profile_is_python(self) -> None:
         self.assertEqual(DEFAULT_PROFILE.language, "python")

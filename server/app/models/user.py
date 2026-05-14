@@ -12,6 +12,9 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    school: Mapped[str | None] = mapped_column(String(160), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(String, nullable=False)
     github_username: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -28,4 +31,5 @@ class User(Base):
     )
 
     assignments = relationship("Assignment", back_populates="instructor")
+    rubrics = relationship("Rubric", back_populates="instructor")
     submissions = relationship("Submission", back_populates="student")

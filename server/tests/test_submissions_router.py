@@ -229,6 +229,16 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
             "diff": "@@ -1,1 +1,1 @@\n-x = 1\n+x = 2\n",
         }
 
+    @staticmethod
+    def _reasoning_details() -> dict:
+        return {
+            "score_reasoning": "Score follows the rubric level and observed test result.",
+            "confidence_reasoning": "Confidence is based on clear evidence.",
+            "evidence": "Rubric, test output, and Pass 1/Pass 2 signals.",
+            "uncertainty": "No major conflicts were present.",
+            "limitations": "Only submitted repository evidence was considered.",
+        }
+
     async def test_plural_recommendations_are_flattened_for_privileged_viewer(self) -> None:
         owner_id = uuid.uuid4()
         instructor_id = uuid.uuid4()
@@ -251,6 +261,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                         "level": "STRONG",
                         "justification": "ok",
                         "confidence": 0.9,
+                        "reasoning_details": self._reasoning_details(),
                         "recommendations": [rec_a, rec_b],
                     },
                     {
@@ -259,6 +270,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                         "level": "ACCEPTABLE",
                         "justification": "naming",
                         "confidence": 0.7,
+                        "reasoning_details": self._reasoning_details(),
                         "recommendations": [rec_c],
                     },
                 ],
@@ -286,6 +298,8 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
             [r["file_path"] for r in recommendations],
             ["src/a.py", "src/b.py", "src/c.py"],
         )
+        criteria = payload["data"]["evaluation"]["ai_feedback"]["criteria_scores"]
+        self.assertIn("reasoning_details", criteria[0])
 
     async def test_singular_recommendation_field_is_still_supported(self) -> None:
         owner_id = uuid.uuid4()
@@ -307,6 +321,7 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
                         "level": "EXEMPLARY",
                         "justification": "ok",
                         "confidence": 0.95,
+                        "reasoning_details": self._reasoning_details(),
                         "recommendation": rec,
                     },
                 ],
@@ -325,8 +340,10 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
         )
         payload = _payload(response)
         recommendations = payload["data"]["evaluation"]["ai_feedback"]["recommendations"]
+        criteria = payload["data"]["evaluation"]["ai_feedback"]["criteria_scores"]
         self.assertEqual(len(recommendations), 1)
         self.assertEqual(recommendations[0]["file_path"], "legacy.py")
+        self.assertNotIn("reasoning_details", criteria[0])
 
     async def test_ai_feedback_hidden_from_unprivileged_viewer_pre_approval(self) -> None:
         owner_id = uuid.uuid4()
@@ -363,4 +380,3 @@ class AiFeedbackRecommendationsSerializationTests(unittest.IsolatedAsyncioTestCa
         )
         payload = _payload(response)
         self.assertIsNone(payload["data"]["evaluation"]["ai_feedback"])
-

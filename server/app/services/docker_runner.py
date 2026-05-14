@@ -14,12 +14,14 @@ Design-doc references:
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import docker
 from docker.errors import APIError, DockerException, ImageNotFound
 
-from ..config import settings
+from ..config import PROJECT_ROOT, settings
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,28 @@ def _get_client() -> docker.DockerClient:
     return docker.DockerClient(base_url=settings.DOCKER_SOCKET_URL)
 
 
+def _host_volume_source(source: str) -> str:
+    """Translate in-container project paths to host paths for sibling containers."""
+    host_root = getattr(settings, "DOCKER_HOST_PROJECT_ROOT", "")
+    if not isinstance(host_root, str) or not host_root.strip():
+        return source
+
+    source_path = Path(source)
+    if not source_path.is_absolute():
+        return source
+
+    try:
+        relative_source = source_path.resolve().relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        return source
+
+    return str(Path(host_root.strip()) / relative_source)
+
+
+def _host_volume_sources(volumes: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+    return {_host_volume_source(source): options for source, options in volumes.items()}
+
+
 # ---------------------------------------------------------------------------
 # Synchronous container lifecycle
 # ---------------------------------------------------------------------------
@@ -99,7 +123,7 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         "detach": True,
     }
     if config.volumes:
-        create_kwargs["volumes"] = config.volumes
+        create_kwargs["volumes"] = _host_volume_sources(config.volumes)
     if config.environment:
         create_kwargs["environment"] = config.environment
     if config.working_dir is not None:
@@ -123,6 +147,13 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
 
     try:
         try:
+            logger.info(
+                "docker_runner: creating sandbox container image=%s "
+                "timeout=%s network_disabled=%s",
+                config.image,
+                timeout,
+                config.network_disabled,
+            )
             container = client.containers.create(**create_kwargs)
         except ImageNotFound:
             logger.info("Image %s not found locally; pulling from registry...", config.image)
@@ -132,11 +163,33 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
                 raise DockerRunnerError(
                     f"Image {config.image!r} not found locally and could not be pulled from registry"
                 ) from None
+            logger.info("docker_runner: pulled sandbox image=%s", config.image)
             container = client.containers.create(**create_kwargs)
+        container_id = getattr(container, "id", "unknown")
+        logger.info(
+            "docker_runner: sandbox container created id=%s image=%s",
+            container_id,
+            config.image,
+        )
         container.start()
+        started_at = time.monotonic()
+        logger.info(
+            "docker_runner: sandbox container started id=%s image=%s",
+            container_id,
+            config.image,
+        )
 
         wait_result = container.wait(timeout=timeout)
         exit_code: int = wait_result["StatusCode"]
+        elapsed_s = time.monotonic() - started_at
+        logger.info(
+            "docker_runner: sandbox container finished id=%s image=%s "
+            "exit_code=%s elapsed_s=%.1f",
+            container_id,
+            config.image,
+            exit_code,
+            elapsed_s,
+        )
 
         stdout = container.logs(stdout=True, stderr=False).decode(
             "utf-8", errors="replace"
@@ -165,8 +218,18 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
                 stderr = container.logs(stdout=False, stderr=True).decode(
                     "utf-8", errors="replace"
                 )
+                logger.warning(
+                    "docker_runner: sandbox container timed out and was killed "
+                    "id=%s image=%s timeout_s=%s stdout_bytes=%d stderr_bytes=%d",
+                    getattr(container, "id", "unknown"),
+                    config.image,
+                    timeout,
+                    len(stdout),
+                    len(stderr),
+                )
                 return ContainerResult(
-                    exit_code=124,  # TTL exceeded — design-doc §3 §IV; maps to timed_out=True in test_parser
+                    # TTL exceeded; test_parser maps this to timed_out=True.
+                    exit_code=124,
                     stdout=stdout,
                     stderr=stderr,
                     timed_out=True,
@@ -181,6 +244,11 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         if container is not None:
             try:
                 container.remove(force=True)
+                logger.info(
+                    "docker_runner: sandbox container removed id=%s image=%s",
+                    getattr(container, "id", "unknown"),
+                    config.image,
+                )
             except Exception:
                 logger.warning("Failed to remove container %s", getattr(container, "id", "unknown"))
         client.close()

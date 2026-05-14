@@ -52,6 +52,8 @@ def parse_test_results(stdout: str, stderr: str, exit_code: int | None) -> dict:
         (_detect_pytest, _parse_pytest),
         (_detect_junit, _parse_junit),
         (_detect_jest, _parse_jest),
+        (_detect_unittestpp, _parse_unittestpp),
+        (_detect_ctest, _parse_ctest),
         (_detect_gtest, _parse_gtest),
         (_detect_gradle, _parse_gradle),
         (_detect_maven_surefire, _parse_maven_surefire),
@@ -146,6 +148,9 @@ _FRAMEWORK_MARKERS = [
     re.compile(r"^[\w.$]+\s+>\s+.+?\s+(PASSED|FAILED|SKIPPED)\s*$", re.MULTILINE),
     # Maven Surefire per-class summary
     re.compile(r"\[(?:INFO|ERROR)\]\s+Tests run:\s*\d+,\s*Failures:\s*\d+", re.IGNORECASE),
+    # UnitTest++ verbose/summary output used by ETLCPP.
+    re.compile(r"^\[(?:PASSED|FAILED)\s+#\d+\]\s+.+", re.MULTILINE),
+    re.compile(r"^(?:Success:|FAILURE:)\s+\d+", re.MULTILINE),
 ]
 
 
@@ -342,6 +347,93 @@ def _parse_jest(text: str) -> list[dict]:
 # Google Test (C++)
 # ---------------------------------------------------------------------------
 
+_UNITTESTPP_DETECT = re.compile(
+    r"^\[(?:PASSED|FAILED)\s+#\d+\]\s+.+|^(?:Success:|FAILURE:)\s+\d+",
+    re.MULTILINE,
+)
+_UNITTESTPP_RESULT = re.compile(
+    r"^\[(PASSED|FAILED)\s+#\d+\]\s+(.+?)(?:\s+\([^)]+\))?$",
+    re.MULTILINE,
+)
+_UNITTESTPP_SUCCESS = re.compile(r"^Success:\s+(\d+)\s+tests?\s+passed\.", re.MULTILINE)
+_UNITTESTPP_FAILURE = re.compile(
+    r"^FAILURE:\s+(\d+)\s+out\s+of\s+(\d+)\s+tests?\s+failed",
+    re.MULTILINE,
+)
+
+
+def _detect_unittestpp(text: str) -> bool:
+    return bool(_UNITTESTPP_DETECT.search(text))
+
+
+def _parse_unittestpp(text: str) -> list[dict]:
+    tests: list[dict] = []
+    for m in _UNITTESTPP_RESULT.finditer(text):
+        raw = m.group(1).upper()
+        status = "passed" if raw == "PASSED" else "failed"
+        tests.append({"name": m.group(2).strip(), "status": status, "message": None})
+
+    if tests:
+        return tests
+
+    success = _UNITTESTPP_SUCCESS.search(text)
+    if success:
+        return [
+            {"name": f"unittestpp#{i + 1}", "status": "passed", "message": None}
+            for i in range(int(success.group(1)))
+        ]
+
+    failure = _UNITTESTPP_FAILURE.search(text)
+    if failure:
+        failed = int(failure.group(1))
+        total = int(failure.group(2))
+        passed = max(0, total - failed)
+        return (
+            [
+                {"name": f"unittestpp#{i + 1}", "status": "passed", "message": None}
+                for i in range(passed)
+            ]
+            + [
+                {"name": f"unittestpp#fail{i + 1}", "status": "failed", "message": None}
+                for i in range(failed)
+            ]
+        )
+
+    return []
+
+
+_CTEST_DETECT = re.compile(
+    r"^\d+%\s+tests\s+passed,\s+\d+\s+tests?\s+failed\s+out\s+of\s+\d+",
+    re.MULTILINE,
+)
+_CTEST_SUMMARY = re.compile(
+    r"^(\d+)%\s+tests\s+passed,\s+(\d+)\s+tests?\s+failed\s+out\s+of\s+(\d+)",
+    re.MULTILINE,
+)
+
+
+def _detect_ctest(text: str) -> bool:
+    return bool(_CTEST_DETECT.search(text))
+
+
+def _parse_ctest(text: str) -> list[dict]:
+    m = _CTEST_SUMMARY.search(text)
+    if not m:
+        return []
+    failed = int(m.group(2))
+    total = int(m.group(3))
+    passed = max(0, total - failed)
+    return (
+        [
+            {"name": f"ctest#{i + 1}", "status": "passed", "message": None}
+            for i in range(passed)
+        ]
+        + [
+            {"name": f"ctest#fail{i + 1}", "status": "failed", "message": None}
+            for i in range(failed)
+        ]
+    )
+
 _GTEST_DETECT = re.compile(r"^\[={10,}\] Running \d+ tests? from", re.MULTILINE)
 _GTEST_OK     = re.compile(r"^\[\s+OK\s+\]\s+(.+?)(?:\s+\(\d+ ms\))?$", re.MULTILINE)
 _GTEST_FAIL   = re.compile(r"^\[\s+FAILED\s+\]\s+(.+?)(?:\s+\(\d+ ms\))?$", re.MULTILINE)
@@ -422,10 +514,18 @@ def _detect_maven_surefire(text: str) -> bool:
 def _parse_maven_surefire(text: str) -> list[dict]:
     """Parse Maven's per-class text summary into individual test entries.
 
-    When surefire XML lands in stdout (via the find/cat append), the JUnit
-    parser takes precedence.  This handles the fallback case where only the
-    Maven console summary is available.
+    Prefers named per-class lines (``- in ClassName``) over the aggregate
+    summary line.  When log_normalizer's 7 KB window keeps only the tail of a
+    long Maven run, the tail contains the final per-class lines plus the
+    aggregate; using the aggregate's count would generate thousands of
+    ``unknown#N`` synthetic entries that overwhelm the LLM payload.  If only
+    the aggregate is visible (all per-class lines were in the discarded middle),
+    fall back to it so the AI still sees a total count.
     """
+    all_matches = list(_MAVEN_CLASS_LINE.finditer(text))
+    named_matches = [m for m in all_matches if m.group(5)]
+    source_matches = named_matches if named_matches else all_matches
+
     # Collect per-method failures for richer naming
     failed_methods: dict[str, str] = {}
     for m in _MAVEN_METHOD_FAIL.finditer(text):
@@ -434,7 +534,7 @@ def _parse_maven_surefire(text: str) -> list[dict]:
         failed_methods[fq_name] = status
 
     tests: list[dict] = []
-    for m in _MAVEN_CLASS_LINE.finditer(text):
+    for m in source_matches:
         total = int(m.group(1))
         failures = int(m.group(2))
         errors = int(m.group(3))

@@ -1,0 +1,120 @@
+<div class="topbar">
+  <div class="crumbs">
+    <span>GitHub</span>
+    <span class="crumbs__sep">/</span>
+    <strong>Repositories</strong>
+  </div>
+  <div class="topbar__spacer"></div>
+</div>
+
+<div class="page page--wide">
+  <div class="page-header">
+    <div class="page-header__titles">
+      <h1>Repositories</h1>
+      <div class="page-header__sub">GitHub repositories accessible via your connected PAT.</div>
+    </div>
+  </div>
+
+  @if (loadError()) {
+    @if (loadError()!.code === 'VALIDATION_ERROR') {
+    <div class="banner banner--amber" role="alert" style="margin-bottom:20px">
+      <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn" /></svg></span>
+      <div class="banner__copy">
+        <div class="banner__title">GitHub PAT not configured</div>
+        <div class="banner__body">
+          Connect a Personal Access Token in
+          <a routerLink="/settings" style="color:inherit;text-decoration:underline">Settings</a>
+          to browse your repositories here.
+        </div>
+      </div>
+    </div>
+    } @else {
+    <div class="banner banner--error" role="alert" style="margin-bottom:20px">
+      <span class="banner__icon"><svg width="16" height="16"><use href="#icon-warn" /></svg></span>
+      <div class="banner__copy">
+        <div class="banner__title">Could not load repositories</div>
+        <div class="banner__body">{{loadError()!.message}}</div>
+      </div>
+    </div>
+    }
+  }
+
+  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+    <div class="input-wrap" style="flex:1;max-width:360px">
+      <span class="input-wrap__adorn">
+        <svg width="14" height="14"><use href="#icon-search" /></svg>
+      </span>
+      <input class="input" placeholder="Filter by name or description…" [value]="searchQuery()"
+        (input)="onSearch($event)" />
+    </div>
+  </div>
+
+  @if (loading()) {
+  <div class="card">
+    <div class="empty">
+      <div class="muted" style="font-size:13px">Loading repositories…</div>
+    </div>
+  </div>
+  }
+
+  @if (!loading() && !loadError() && filtered().length === 0) {
+  <div class="card">
+    <div class="empty">
+      <div class="empty__icon">
+        <svg width="24" height="24"><use href="#icon-github" /></svg>
+      </div>
+      <h3>No repositories found</h3>
+      <p>No repositories match your filter, or your token has no accessible repositories.</p>
+    </div>
+  </div>
+  }
+
+  @if (filtered().length > 0) {
+  <div class="table-wrap" style="border-width:1px 2px 1px 5px">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Repository</th>
+          <th style="width:100px">Visibility</th>
+          <th>Description</th>
+          <th style="width:130px">Last updated</th>
+          <th style="width:110px;text-align:right;padding-right:30px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (repo of filtered(); track repo.full_name) {
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <svg width="14" height="14" style="flex-shrink:0;color:var(--ink-3)"><use href="#icon-github" /></svg>
+              <span class="mono" style="font-size:13px;color:var(--ink)">{{repo.full_name}}</span>
+            </div>
+          </td>
+          <td>
+            @if (repo.visibility === 'private') {
+            <span class="badge badge--green">Private</span>
+            } @else {
+            <span class="badge badge--neutral">Public</span>
+            }
+          </td>
+          <td style="color:var(--ink-3);font-size:13px">
+            {{repo.description ?? '—'}}
+          </td>
+          <td style="color:var(--ink-3);font-size:13px">
+            {{repo.updated_at | date:'mediumDate'}}
+          </td>
+          <td>
+            <div class="table__actions">
+              <button class="btn btn--ghost btn--sm" (click)="submitRepo(repo)">
+                Submit
+                <svg width="12" height="12"><use href="#icon-chevron" /></svg>
+              </button>
+            </div>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  }
+</div>

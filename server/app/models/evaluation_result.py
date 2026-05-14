@@ -12,7 +12,7 @@ class EvaluationResult(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     submission_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("submissions.id"), unique=True, nullable=False
+        ForeignKey("submissions.id", ondelete="CASCADE"), unique=True, nullable=False
     )
     deterministic_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_feedback_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

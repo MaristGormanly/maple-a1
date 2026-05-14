@@ -10,9 +10,11 @@ dist/
 
 # Environment
 .env
+.env.docker
 server/.env
 
 # Data
 data/raw/*
 !data/raw/.gitkeep
 data/cache/*
+uploads/*

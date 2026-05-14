@@ -60,10 +60,16 @@ class Settings(BaseSettings):
     # --- Docker Configuration ---
     # The Docker daemon socket URL. Default is the standard Linux UNIX socket.
     DOCKER_SOCKET_URL: str = "unix:///var/run/docker.sock"
+    # Optional absolute host checkout path used when this app runs in a container
+    # but creates sibling sandbox containers through the host Docker socket.
+    DOCKER_HOST_PROJECT_ROOT: str = ""
     # Fallback image when no language-specific image is specified.
     DOCKER_DEFAULT_IMAGE: str = "python:3.12-slim"
     # Default timeout (seconds) to wait for a container to finish before giving up.
     DOCKER_CONTAINER_TIMEOUT: int = 60
+    # Disable sandbox container network access. Leave false when submitted repos
+    # need to fetch Maven/npm/pip dependencies during test execution.
+    DOCKER_SANDBOX_NETWORK_DISABLED: bool = False
 
     # --- LLM Configuration ---
     GEMINI_API_KEY: str | None = None
