@@ -86,7 +86,7 @@ async def run_container(
     student_repo_path: str,
     test_suite_path: str | None,
     *,
-    timeout_seconds: int = 30,
+    timeout_seconds: int | None = None,
     discovered_command: str | None = None,
     discovered_working_dir: str = ".",
     required_version: int | None = None,
@@ -101,8 +101,15 @@ async def run_container(
     *required_version* is passed to ``get_sandbox_profile`` so the best
     matching image is selected.  If no compatible image exists the highest
     available is used and ``ContainerResult.version_mismatch`` will be True.
+
+    *timeout_seconds* overrides the profile's default budget when set;
+    otherwise the per-language ``SandboxProfile.default_timeout_seconds``
+    applies (Java/C++ need ~10 min, Python/JS only ~2 min).
     """
     profile, version_ok = get_sandbox_profile(language, required_version)
+    effective_timeout = (
+        timeout_seconds if timeout_seconds is not None else profile.default_timeout_seconds
+    )
 
     if discovered_command is not None:
         # auto_discover: copy the read-only source into a writable tmpfs at
@@ -164,13 +171,13 @@ async def run_container(
         volumes=volumes,
         environment=sandbox_environment,
         working_dir=container_working_dir,
-        timeout=timeout_seconds,
+        timeout=effective_timeout,
         network_disabled=settings.DOCKER_SANDBOX_NETWORK_DISABLED,
-        # Memory: cap each container at 256 MB
-        mem_limit="256m",
-        # CPU: 50% of one core (quota/period = 0.5)
+        # Resource budget comes from the per-language profile so compile-heavy
+        # languages (Java, C++) get more memory and CPU than interpreted ones.
+        mem_limit=profile.mem_limit,
         cpu_period=100_000,
-        cpu_quota=50_000,
+        cpu_quota=profile.cpu_quota,
         # Security: no privilege escalation, drop every Linux capability
         security_opt=["no-new-privileges:true"],
         cap_drop=["ALL"],

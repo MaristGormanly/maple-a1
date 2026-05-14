@@ -14,6 +14,7 @@ Design-doc references:
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -171,6 +172,7 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
             config.image,
         )
         container.start()
+        started_at = time.monotonic()
         logger.info(
             "docker_runner: sandbox container started id=%s image=%s",
             container_id,
@@ -179,11 +181,14 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
 
         wait_result = container.wait(timeout=timeout)
         exit_code: int = wait_result["StatusCode"]
+        elapsed_s = time.monotonic() - started_at
         logger.info(
-            "docker_runner: sandbox container finished id=%s image=%s exit_code=%s",
+            "docker_runner: sandbox container finished id=%s image=%s "
+            "exit_code=%s elapsed_s=%.1f",
             container_id,
             config.image,
             exit_code,
+            elapsed_s,
         )
 
         stdout = container.logs(stdout=True, stderr=False).decode(
@@ -206,17 +211,21 @@ def _run_container_sync(config: ContainerConfig) -> ContainerResult:
         # Likely a timeout from container.wait(). Try to kill and collect logs.
         if container is not None:
             try:
-                logger.warning(
-                    "docker_runner: sandbox container timeout; killing id=%s image=%s",
-                    getattr(container, "id", "unknown"),
-                    config.image,
-                )
                 container.kill()
                 stdout = container.logs(stdout=True, stderr=False).decode(
                     "utf-8", errors="replace"
                 )
                 stderr = container.logs(stdout=False, stderr=True).decode(
                     "utf-8", errors="replace"
+                )
+                logger.warning(
+                    "docker_runner: sandbox container timed out and was killed "
+                    "id=%s image=%s timeout_s=%s stdout_bytes=%d stderr_bytes=%d",
+                    getattr(container, "id", "unknown"),
+                    config.image,
+                    timeout,
+                    len(stdout),
+                    len(stderr),
                 )
                 return ContainerResult(
                     # TTL exceeded; test_parser maps this to timed_out=True.

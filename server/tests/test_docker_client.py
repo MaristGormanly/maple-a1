@@ -216,6 +216,41 @@ class TestRunContainer(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("npm ci", command)
 
 
+class TestProfileResourceBudgetFlowsThrough(unittest.IsolatedAsyncioTestCase):
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_java_uses_wider_budget(self, mock_run) -> None:
+        # Regression: Java/Maven needs minutes to download deps + compile, so
+        # the profile's 600s / 2g / 1 CPU must reach ContainerConfig.
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+        await run_container("java", "/s", "/t")
+        config: ContainerConfig = mock_run.await_args[0][0]
+        self.assertEqual(config.timeout, 600)
+        self.assertEqual(config.mem_limit, "2g")
+        self.assertEqual(config.cpu_quota, 100_000)
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_python_keeps_default_budget(self, mock_run) -> None:
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+        await run_container("python", "/s", "/t")
+        config: ContainerConfig = mock_run.await_args[0][0]
+        self.assertEqual(config.timeout, 120)
+        self.assertEqual(config.mem_limit, "256m")
+        self.assertEqual(config.cpu_quota, 50_000)
+
+    @patch("app.services.docker_client._docker_run", new_callable=AsyncMock)
+    async def test_explicit_timeout_overrides_profile_default(self, mock_run) -> None:
+        mock_run.return_value = RunnerResult(
+            exit_code=0, stdout="", stderr="", timed_out=False,
+        )
+        await run_container("java", "/s", "/t", timeout_seconds=42)
+        config: ContainerConfig = mock_run.await_args[0][0]
+        self.assertEqual(config.timeout, 42)
+
+
 class TestInstallPrelude(unittest.TestCase):
     def test_python_prelude_installs_pytest_then_requirements(self) -> None:
         prelude = _install_prelude(SANDBOX_PROFILES["python"])

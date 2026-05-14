@@ -44,6 +44,24 @@ class TestSandboxProfiles(unittest.TestCase):
             SANDBOX_PROFILES["typescript"].image,
         )
 
+    def test_compile_heavy_languages_get_wider_budget(self) -> None:
+        # Java and C++ compile + download deps before tests run, so they get a
+        # bigger time/memory/CPU budget than interpreted languages.
+        for lang in ("java", "cpp"):
+            with self.subTest(lang=lang):
+                p = SANDBOX_PROFILES[lang]
+                self.assertGreaterEqual(p.default_timeout_seconds, 600)
+                self.assertEqual(p.mem_limit, "2g")
+                self.assertEqual(p.cpu_quota, 100_000)
+
+    def test_interpreted_languages_keep_default_budget(self) -> None:
+        for lang in ("python", "javascript", "typescript"):
+            with self.subTest(lang=lang):
+                p = SANDBOX_PROFILES[lang]
+                self.assertEqual(p.default_timeout_seconds, 120)
+                self.assertEqual(p.mem_limit, "256m")
+                self.assertEqual(p.cpu_quota, 50_000)
+
     def test_all_profiles_have_image_and_test_command(self) -> None:
         for lang, profile in SANDBOX_PROFILES.items():
             with self.subTest(lang=lang):
